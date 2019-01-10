@@ -30,7 +30,6 @@ lifted, because I can't see myself implementing a sound system directly in pytho
 
 ### Fast debugging cycle
 
-
 ### Writting a sane user interface is simple
 
 ### Running on both Windows and Linux has never been easier
@@ -41,9 +40,29 @@ lifted, because I can't see myself implementing a sound system directly in pytho
 
 ### There's no light tooling available
 
+The current ecosystem built around Vulkan is pretty much exclusively C++. With maybe some experimental wrappers for other languages here and there.
+Be ready to write lots of boilerplate code, and with Vulkan not being shy in that regard in the first place, things can get painful. Hopefully for me, 
+I've maitained my own little wrapper with its set of helpers.
+
+Another thing is that python do not have a light library to do linear algebra, or light image loading or light assets loading. Want to multiply two matrices, here's scipy and numpy. Now cry and despair as you try to build the C dependencies on Windows. I ended up writing my own math library and
+loaders.
+
+And finally, although not really related to Vulkan and python, assets management is pretty difficult outside of an engine environment. It took me quite
+some time to build adequate tooling to compile textures and environment map.
+
 ### The weight of the wrapper layer
 
+PanicPanda use my own little wrapper which was built around ctypes. ctypes is the foreign function library that comes bundled in the standard library.
+While the library is quick and easy to use, it is also the slowest way to wrap c function calls. Using the c structures provided by ctypes tends to generate lots of garbage too. This will probably become a bottleneck in the future.
+
+There other more performing alternative like cython or just plain old C extensions that could be used, but the current state of the project, the
+added complexity is not worth it.
+
 ### The scary monster under your bed, the GC
+
+One of the biggest features of Vulkan is efficient multithreading. This is mostly done by recording the command buffers on multiple thread.
+With python and the GIL, the advanges goes away. Moving the command recording outside of python, in a C extension, could solve the problem, but then
+again, the added complexity is not worth it for now.
 
 ## What's next
 
