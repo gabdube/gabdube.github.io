@@ -7,7 +7,7 @@ categories: python vulkan
 excerpt_separator: <!--more-->
 ---
 
-Hey there. So you are interested in building a vulkan application in something else than c++? Why not python?
+Hey there. Interested in building a vulkan application in something else than c++? Why not python?
 In this article, you will learn about my experiences about building a simple rendering application with both of these guys.
 
 <!--more-->
