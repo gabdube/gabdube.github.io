@@ -129,7 +129,7 @@ Don't even think about moving the `VkDrawIndexedIndirectCommand` in the array. S
 
 The last important thing to remember is that the vertex shader do not have any clue about how to process that draw commands managed by the compute shader. Hopefully for us, the `VkDrawIndexedIndirectCommand` can be self referencing using the `firstInstance` field.
 
-Basically, setting the `firstInstance` field the current game object index ([example](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L179)) means that the vertex shader [will be able to fetch](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.vert#L83) the right game object using the `gl_InstanceIndex` value.
+Basically, setting the `firstInstance` field to the the current game object index ([example](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L179)) means that the vertex shader [will be able to fetch](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.vert#L83) the right game object using the `gl_InstanceIndex` value.
 
 Note that `gl_InstanceIndex` is only available in Vulkan shader. For more information, see the accepted answer [here](https://stackoverflow.com/questions/35638512/instanced-glsl-shaders-in-vulkan).
 
