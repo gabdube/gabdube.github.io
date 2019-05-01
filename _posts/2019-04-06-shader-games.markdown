@@ -67,9 +67,13 @@ By default, dynamic indexing is not supported in shaders. This can be fixed by e
 
 Note that because write access is required, the shaders only use `buffer block` and not `uniform block`. Dynamic indexing for uniforms need not to be enabled.
 
+### Feature: shaderFloat64
+
+I like to send the time to my shaders using a `double` instead of a `float`. This is a personal preference and this not required for this demo.
+
 ## Buffers creation
 
-The next important setup step is the [buffers allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L869) and [state buffer allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L967).
+The next important step is the [buffers allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L869) and [state buffer allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L967).
 
 In this step, three buffers are allocated. One for the vertex and indices, another one for the game data, and one last for the shared game state. Because they will be exposed in the shaders, the usage flags `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT` must be added.
 
@@ -103,6 +107,24 @@ Using storage buffers also remove the buffer range limit. Even on Nvdia hardware
 
 This makes life a bit easier when [defining the write sets](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L1133) because `VK_WHOLE_SIZE` can be used without worries.
 
-## Writing attributes and index from a compute shaders
+## Writing meshes from compute shaders
 
-## Managing draw call from a compute shader
+Attributes and indices data must be defined as array in the shader. [Here is an example](https://github.com/gabdube/asteroids-shader/blob/master/asteroids_init.comp#L288). A loop must then iterate over the values and save them in the buffers.
+
+Not only is this very painful to write, it also produce very bloated SPRIV code. It was fine for this example  because the meshes are very simple, but uploading a complex mesh would probably make the SPIRV binary explode in size.
+
+Also, this is probably very slow. Luckily, mesh uploading is only in the initialization compute shader.
+
+## Managing draw call from compute shaders
+
+Both the count buffer and the draw parameter buffer are exposed in the shader inside the `game` binding. The draw count is exposed in `game.drawCount` and the draw parameters are exposed in `game.objects`. Each draw parameter is associated to a game object. By [sending a stride]() that is bigger than the `VkDrawIndexedIndirectCommand` structure, it is possible to append extra information to the draw commands.
+
+Don't even think about moving the `VkDrawIndexedIndirectCommand` in the array. Seriously. I spent 5 hours trying to debug only to rewrite the whole thing because I coudn't understand why the draw command were being corrupted.
+
+## Debugging game logic from shaders
+
+*this page was intentionally left blank*
+
+## Conclusion
+
+Because of the serious limitations: everything must fit in GPU memory, debugging is next to impossible, textures must use an atlas, etc. Game logic should be stay a CPU task. Nevertheless, this project was a lot of fun to code.
