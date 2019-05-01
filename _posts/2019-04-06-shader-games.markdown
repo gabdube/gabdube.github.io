@@ -125,7 +125,7 @@ Removing an object is done by setting the `VkDrawIndexedIndirectCommand.indexCou
 
 Don't even think about moving the `VkDrawIndexedIndirectCommand` in the array. Seriously. I spent 5 hours trying to debug only to rewrite the whole thing because I coudn't understand why the draw command were being corrupted.
 
-### Pointing to right matrix in the vertex shader
+### Pointing to the right matrix in the vertex shader
 
 The last important thing to remember is that the vertex shader do not have any clue about how to process that draw commands managed by the compute shader. Hopefully for us, the `VkDrawIndexedIndirectCommand` can be self referencing using the `firstInstance` field.
 
