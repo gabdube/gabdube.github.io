@@ -65,4 +65,44 @@ The difference is that `VK_AMD_draw_indirect_count` is exclusive to AMD hardware
 
 By default, dynamic indexing is not supported in shaders. This can be fixed by enabling `shaderStorageBufferArrayDynamicIndexing` or `shaderUniformBufferArrayDynamicIndexing` in the device feature. These features are widely supported.
 
-Note that because write access is required (amongst other things, more on that later), the shaders only use `buffer block` and not `uniform block`. Dynamic indexing for uniforms need not to be enabled.
+Note that because write access is required, the shaders only use `buffer block` and not `uniform block`. Dynamic indexing for uniforms need not to be enabled.
+
+## Buffers creation
+
+The next important setup step is the [buffers allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L869) and [state buffer allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L967).
+
+In this step, three buffers are allocated. One for the vertex and indices, another one for the game data, and one last for the shared game state. Because they will be exposed in the shaders, the usage flags `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT` must be added.
+
+Because the vertex attributes and the game data will only the GPU will access the data, the buffer can be safely backed by `MEMORY_PROPERTY_DEVICE_LOCAL_BIT` memory.
+
+The state buffer must be backed by `MEMORY_PROPERTY_HOST_VISIBLE_BIT` memory because it will be updated from the host.
+
+Two very important things to remember
+
+* By default, the initial buffer content is `undefined`. This means that it must be manually zeroed.
+* The buffer bindings must be aligned to `minStorageBufferOffsetAlignment`. Otherwise the program will likely only work on your hardware vendor.
+
+## Data layout
+
+The compute shaders expose 4 buffer bindings:
+
+* [indices](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L74) - For the indices data
+* [attributes](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L78) - For the attribute data
+* [game](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L82) - For the game data
+* [state](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L99) - For the shared state
+
+The vertex shader only expose the game buffer
+
+* [game](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.vert#L65)
+
+In the vertex shader, the game buffer binding *must* be marked as `readonly`, otherwise the shader will use atomics to read from it, which will crash the program because this is a feature that must be enabled in the device.
+
+Every bindings use the `std430` layout (which is only avaible on `buffer` bindings). This allow the data to be tighly packed in arrays and structs. The default `std140` can introduce a lot of unnecessary padding. for more information see [this](https://www.khronos.org/opengl/wiki/Interface_Block_(GLSL)#Memory_layout).
+
+Using storage buffers also remove the buffer range limit. Even on Nvdia hardware (which is usually the most restrictive). For example, according to GPUINFO ([link](https://vulkan.gpuinfo.org/displayreport.php?id=5661#limits)) a NVDIA GTX 1070 maximum range for a uniform buffer is `65536` bytes, but for storage buffers it is `4294970000` bytes.
+
+This makes life a bit easier when [defining the write sets](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L1133) because `VK_WHOLE_SIZE` can be used without worries.
+
+## Writing attributes and index from a compute shaders
+
+## Managing draw call from a compute shader
