@@ -11,6 +11,11 @@ Hey there. Wanna build games out of shaders? They have been around for some time
 
 <!--more-->
 
+<video style="width:100%" controls>
+  <source src="assets/video/asteroids.mp4" type="video/mp4">
+Your browser does not support the video tag.
+</video>
+
 ## About
 
 The goal of this project is to move as much logic as possible from the CPU to the GPU. As a demo, I've decided to create an Asteroids clone ([wiki link](https://en.wikipedia.org/wiki/Asteroids_(video_game))) as it includes two of the features I wanted to see the most on the GPU: **draw call management** and **assets management** without adding too much clutter.
