@@ -49,4 +49,20 @@ There you go. That's the meat of the runtime.
 
 ## Vulkan initialization
 
-The python setup script initialize the all vulkan resources. At 2000 lines of code, it might seems like alot, but that's just how Vulkan is.
+The python setup script initialize the all vulkan resources. At 2000 lines of code, it might seems like alot, but that's just how verbose Vulkan is.
+
+There's nothing interesting in the instance setup.
+
+For [the device setup](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L330), a feature and an extension must be enabled.
+
+### Extension: Draw indirect count
+
+Vulkan alone supports indirect drawing through the function `vkCmdDrawIndexedIndirect`. There is one problem though: there's no way to tell the GPU how many draw parameters there is in the buffer. This limitation can be removed with any of those two extensions: `VK_AMD_draw_indirect_count` and `VK_KHR_draw_indirect_count`. Both extensions work in the exact same way by exposing the `vkCmdDrawIndexedIndirectCount*` ([link](https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/vkCmdDrawIndexedIndirectCountKHR.html)) function.
+
+The difference is that `VK_AMD_draw_indirect_count` is exclusive to AMD hardware and is available since the beginning of time while `VK_KHR_draw_indirect_count` is available on any hardware vendor (including AMD), but only in recent drivers (it requires Vulkan 1.1 support). For example, my intel laptop with a IGPU do not support this function because it is stuck at `Vulkan 1.0.43`.
+
+### Feature: shaderStorageBufferArrayDynamicIndexing
+
+By default, dynamic indexing is not supported in shaders. This can be fixed by enabling `shaderStorageBufferArrayDynamicIndexing` or `shaderUniformBufferArrayDynamicIndexing` in the device feature. These features are widely supported.
+
+Note that because write access is required (amongst other things, more on that later), the shaders only use `buffer block` and not `uniform block`. Dynamic indexing for uniforms need not to be enabled.
