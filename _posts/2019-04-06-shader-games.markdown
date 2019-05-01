@@ -12,7 +12,7 @@ Hey there. Wanna build games out of shaders? They have been around for some time
 <!--more-->
 
 <video style="width:100%" controls>
-  <source src="assets/video/asteroids.mp4" type="video/mp4">
+  <source src="/assets/videos/asteroids.mp4" type="video/mp4">
 Your browser does not support the video tag.
 </video>
 
