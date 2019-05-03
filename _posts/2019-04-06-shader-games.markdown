@@ -35,10 +35,10 @@ The project contains 4 files:
 
 In the setup script, because all the fun stuff is done on the GPU, all that's left is a simple [check list](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L1911).
 
-After every Vulkan resource is ready to be used, it's time to record the game command buffer. This is done once per framebuffer in [the record function](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L1548). The commands are recorded in the following order:
+After creating all required Vulkan resource, it's time to record the game command buffer. This is done once per framebuffer in [the record function](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L1548). The commands are recorded in the following order:
 
 1. Bind the compute pipeline
-2. Execute the game compute shader
+2. Execute the game logic compute shader
 3. Use a barrier to make sure the execution is done before rendering
 4. Begin the render pass
 5. Bind all the required resources
@@ -56,7 +56,7 @@ There you go. That's the meat of the runtime.
 
 The python setup script initialize the all vulkan resources. At 2000 lines of code, it might seems like alot, but that's just how verbose Vulkan is.
 
-There's nothing interesting in the instance setup.
+There's nothing interesting in the instance setup, so lets skip to the device setup.
 
 For [the device setup](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L330), a feature and an extension must be enabled.
 
@@ -68,7 +68,7 @@ The difference is that `VK_AMD_draw_indirect_count` is exclusive to AMD hardware
 
 ### Feature: shaderStorageBufferArrayDynamicIndexing
 
-By default, dynamic indexing is not supported in shaders. This can be fixed by enabling `shaderStorageBufferArrayDynamicIndexing` or `shaderUniformBufferArrayDynamicIndexing` in the device feature. These features are widely supported.
+By default, dynamic indexing is not supported in shaders. This can be fixed by enabling `shaderStorageBufferArrayDynamicIndexing` or `shaderUniformBufferArrayDynamicIndexing` in the device feature. As these features are widely supported, this should not be a problem.
 
 Note that because write access is required, the shaders only use `buffer block` and not `uniform block`. Dynamic indexing for uniforms need not to be enabled.
 
@@ -80,7 +80,7 @@ I like to send the time to my shaders using a `double` instead of a `float`. Thi
 
 The next important step is the [buffers allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L869) and [state buffer allocation](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L967).
 
-In this step, three buffers are allocated. One for the vertex and indices, another one for the game data, and one last for the shared game state. Because they will be exposed in the shaders, the usage flags `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT` must be added.
+In this step, three buffers are allocated. One for the vertex and indices, another one for the game data, and one last for the shared game state. Because they will be exposed as storage buffer in the shaders, the usage flags `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT` must be added.
 
 Because the vertex attributes and the game data will only the GPU will access the data, the buffer can be safely backed by `MEMORY_PROPERTY_DEVICE_LOCAL_BIT` memory.
 
@@ -124,9 +124,9 @@ Also, this is probably very slow. Luckily, mesh uploading is only in the initial
 
 Both the count buffer and the draw parameter buffer are exposed in the shader inside the `game` binding. The draw count is exposed in `game.drawCount` and the draw parameters are exposed in `game.objects`. Each draw parameter is associated to a game object. By [sending a stride](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.py#L1604) that is bigger than the `VkDrawIndexedIndirectCommand` structure, it is possible to append extra information to the draw commands.
 
-Adding a draw call to the program is done by increasing the count buffer and appending a new value to the game obejct array.
+Adding a draw call to the program is done by increasing the count buffer and appending a new value to the game object array.
 
-Removing an object is done by setting the `VkDrawIndexedIndirectCommand.indexCount` to 0 and flag this particular [draw command as "unused"](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L140) using the extra data.
+Removing an object is done by setting the `VkDrawIndexedIndirectCommand.indexCount` member of the selected object to 0 and flag the [draw command as "unused"](https://github.com/gabdube/asteroids-shader/blob/master/asteroids.comp#L140) using the extra data.
 
 Don't even think about moving the `VkDrawIndexedIndirectCommand` in the array. Seriously. I spent 5 hours trying to debug only to rewrite the whole thing because I coudn't understand why the draw command were being corrupted.
 
@@ -142,6 +142,8 @@ Note that `gl_InstanceIndex` is only available in Vulkan shader. For more inform
 
 *this page was intentionally left blank*
 
+On a more serious note. Debugging is next to impossible when all your logic is executed on the GPU. The best way I found is to map the whole game state and print it out.
+
 ## Conclusion
 
-Because of the serious limitations: everything must fit in GPU memory, debugging is next to impossible, textures must use an atlas, etc. Game logic should be stay a CPU task. Nevertheless, this project was a lot of fun to code. 10/10 would not program DOOM.
+Because of the serious limitations: everything must fit in GPU memory, debugging is next to impossible, most structures are defined more than one, etc. Game logic should be stay a CPU task. Nevertheless, this project was a lot of fun to code. 10/10 would not program DOOM.
