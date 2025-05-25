@@ -1,0 +1,214 @@
+//! Serializer and Deserializer for the application data
+use zerocopy::{Immutable, IntoBytes, TryFromBytes, FromBytes};
+use crate::error::Error;
+
+pub const U32_SIZE: usize = size_of::<u32>();
+pub const MIN_ALIGN: usize = U32_SIZE;
+
+pub trait StoreLoad: Sized {
+    fn store(&mut self, writer: &mut StoreWriter);
+    fn load(reader: &mut StoreReader) -> Result<Self, Error>;
+}
+
+// Blanket implementation for all the types using zerocopy
+impl<T> StoreLoad for T 
+    where T: IntoBytes+TryFromBytes+Immutable
+{
+    fn store(&mut self, writer: &mut StoreWriter) {
+        writer.write(self);
+    }
+
+    fn load(reader: &mut StoreReader) -> Result<Self, Error> {
+        reader.try_read()
+    }
+}
+
+pub struct StoreWriter {
+    pub data: Vec<u8>,
+    pub data_offset: usize,
+}
+
+impl StoreWriter {
+
+    pub fn new() -> Self {
+        StoreWriter { 
+            data: vec![0u8; 10240],    // 10kb should be more than enough
+            data_offset: 0
+        }
+    }
+
+    pub fn data(self) -> Box<[u8]> {
+        self.data[0..self.data_offset].to_vec().into_boxed_slice()
+    }
+
+    pub fn write<T: IntoBytes+Immutable>(&mut self, value: &T) {
+        assert!(align_of::<T>() == MIN_ALIGN, "Data alignment must be 4 bytes");
+
+        let size = size_of::<T>();
+        if self.must_realloc(size) {
+            self.realloc(size);
+        }
+
+        value.write_to_prefix(self.remaining_bytes()).unwrap();
+        self.data_offset += size;
+    }
+
+    pub fn write_array<T: IntoBytes+Immutable>(&mut self, values: &[T]) {
+        assert!(align_of::<T>() == MIN_ALIGN, "Data alignment must be 4 bytes");
+
+        let values_count = values.len();
+        if values_count == 0 {
+            self.write(&0u32);  // 0 for the size and no data
+            return;
+        }
+
+        let values_size = size_of::<T>() * values_count;
+        let total_size = U32_SIZE + values_size;
+        if self.must_realloc(total_size) {
+            self.realloc(total_size);
+        }
+
+        self.write_u32(values_count as u32);
+
+        values.write_to_prefix(self.remaining_bytes()).unwrap();
+        self.data_offset += values_size;
+    }
+
+    pub fn write_str(&mut self, value: &str) {
+        // Strings must be padded to 4 bytes
+        let length = value.len();
+        let padded_length = crate::shared::align_up(length, MIN_ALIGN);
+        let total_length = U32_SIZE + U32_SIZE + padded_length;
+        if self.must_realloc(total_length) {
+            self.realloc(total_length);
+        }
+
+        self.write_u32(length as u32);
+        self.write_u32(padded_length as u32);
+        value.write_to_prefix(self.remaining_bytes()).unwrap();
+
+        self.data_offset += padded_length;
+    }
+
+    pub fn write_string_hashmap<T: IntoBytes+Immutable>(&mut self, values: &fnv::FnvHashMap<String, T>) {
+        assert!(align_of::<T>() == MIN_ALIGN, "Data alignment must be 4 bytes");
+
+        let values_count = values.len() as u32;
+        self.write(&values_count);
+
+        if values_count == 0 {
+            return;
+        }
+        
+        for (key, value) in values.iter() {
+            self.write_str(key);
+            self.write(value);
+        }
+    }
+
+    fn must_realloc(&self, size: usize) -> bool {
+        self.data[self.data_offset..].len() < size
+    }
+
+    fn remaining_bytes(&mut self) -> &mut [u8] {
+        &mut self.data[self.data_offset..]
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        // Assumes the buffer is already large enough
+        value.write_to_prefix(self.remaining_bytes()).unwrap();
+        self.data_offset += U32_SIZE;
+    }  
+
+    #[inline(never)]
+    #[cold]
+    fn realloc(&mut self, min_size: usize) {
+        self.data.reserve_exact(crate::shared::align_up(min_size, 0x800));  // 2kb block size minimum
+        unsafe { self.data.set_len(self.data.capacity()); }
+    }
+
+}
+
+pub struct StoreReader<'a> {
+    pub data: &'a [u8],
+    pub data_offset: usize,
+}
+
+impl<'a> StoreReader<'a> {
+
+    pub fn new(data: &'a [u8]) -> Result<Self, Error> {
+        let reader = StoreReader {
+            data,
+            data_offset: 0,
+        };
+
+        Ok(reader)
+    }
+
+    pub fn try_read<T: TryFromBytes+Immutable>(&mut self) -> Result<T, Error> {
+        let (value, _) = TryFromBytes::try_read_from_prefix(& self.data[self.data_offset..])
+            .map_err(|_| save_err!("Failed to read data") )?;
+
+        self.data_offset += size_of::<T>();
+
+        Ok(value)
+    }
+
+    pub fn read_array<'b, T: FromBytes+Immutable>(&mut self) -> &'b [T] {
+        let count = self.read_u32() as usize;
+        if count == 0 {
+            return &[];
+        }
+
+        let total_size = count * size_of::<T>();
+        if total_size > self.remaining_size() {
+            panic!("Malformed data. Reading array would go outside buffer");
+        }
+
+        let start_offset = self.data_offset;
+        self.data_offset += total_size;
+
+        unsafe { ::std::slice::from_raw_parts(self.data.as_ptr().add(start_offset) as *const T, count) }
+    }
+
+    pub fn read_str(&mut self) -> &str {
+        let length = self.read_u32();
+        let length_padded = self.read_u32();
+        let str = unsafe {
+            let str_ptr = self.data.as_ptr().add(self.data_offset) as *const u8;
+            let str_bytes = ::std::slice::from_raw_parts(str_ptr, length as usize);
+            ::std::str::from_utf8(str_bytes).unwrap_or("UTF8 DECODING ERROR")
+        };
+
+        self.data_offset += length_padded as usize;
+
+        str
+    }
+
+    pub fn read_string_hashmap<T: FromBytes+Immutable>(&mut self) -> fnv::FnvHashMap<String, T> {
+        let mut out = fnv::FnvHashMap::default();
+        let count = self.read_u32() as usize;
+        if count == 0 {
+            return out;
+        }
+
+        for _ in 0..count {
+            let key = self.read_str().to_string();
+            let value = self.try_read().unwrap();
+            out.insert(key, value);
+        }
+
+        out
+    }
+
+    fn read_u32(&mut self) -> u32 {
+        let offset = self.data_offset;
+        let value = u32::read_from_bytes(&self.data[offset..offset+U32_SIZE]).unwrap();
+        self.data_offset += U32_SIZE;
+        value
+    }
+
+    fn remaining_size(&self) -> usize {
+        self.data[self.data_offset..].len()
+    }
+}

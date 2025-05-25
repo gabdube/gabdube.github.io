@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Navmesh Pathfinding</title>
+
+  <link rel="icon" type="image/svg+xml" href="/favico.svg" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fira+Code" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="../../styles.css">
+
+  <script src="navmesh_pathfinding.js" defer></script>
+</head>
+<body class="article">
+  <header>
+    <h2>2D Navmesh Pathfinding</h2>
+    <div class="header-nav">
+      <div><a href="/index.html">Home</a></div>
+    </div>
+  </header>
+  <main>
+    <div id="content">
+      <div>
+        <p>Pathfinding is complex. Most game engine already provide generic solutions that handle all the messy parts for you. However, if you are building your own engine, this is something you will have to code (mostly) from scratch.</p>
+        <p>The good news is there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
+        <p>The bad news is... theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
+        <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding library, from building the navmesh to generating the final path. Using Rust of course.</p>
+        <p>(Note that the interactive demo will only be visible if your screen is >= 1000px)</p>
+      </div>
+  
+      <div>
+        <p>Special thanks to:</p>
+        <ul>
+          <li><a href="https://www.redblobgames.com/">Red Blob Games</a>: For the best A* Algorithm guide available online</li>
+          <li><a href="https://pixelfrog-assets.itch.io/">PixelFrog</a>: For the amazing assets used in this article</li>
+          <li><a href="https://github.com/mapbox/delaunator">Delaunator</a>: The great library that handles the delaunay triangulation</li>
+          <li><a href="https://github.com/mourner/delaunator-rs">Delaunator-rs</a>: The rust port of delaunator</li>
+        </ul>
+      </div>
+
+      <hr class="article-separator">
+    </div>
+    
+  </main>
+  <div id="separator"></div>
+  <div id="demo">
+    <canvas id="canvas"></canvas>
+  </div>
+  <footer>
+    <p>Copyright &copy; 2025 Gabriel Dubé</p>
+  </footer>
+</body>
+</html>
