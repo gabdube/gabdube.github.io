@@ -3,8 +3,11 @@ import { set_last_error } from "./error";
 
 const ASSETS_BUNDLE = `
 TEXTURE;atlas;assets/atlas.png;
+TEXTURE;terrain;assets/terrain.png;
 CSV;atlas_sprites;assets/atlas.csv;
 SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
+SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
+SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
 `;
 
 export class Shader {
@@ -103,6 +106,7 @@ export class EngineAssets {
             .catch((_) => { set_last_error(`Failed to decode image ${path}`); return null; } );
         
         if (!bitmap) {
+            set_last_error(`Failed to load bitmap ${name}`);
             return false;
         }
 
@@ -116,6 +120,7 @@ export class EngineAssets {
     private async load_csv(name: string, path: string): Promise<boolean> {
         const csv_text = await fetch_text(path);
         if (!csv_text) {
+            set_last_error(`Failed to load csv source for ${name}`);
             return false;
         }
     
@@ -131,6 +136,7 @@ export class EngineAssets {
         ]);
 
         if (!vertex_text || !fragment_text) {
+            set_last_error(`Failed to load shader source for ${name}`);
             return false;
         }
 

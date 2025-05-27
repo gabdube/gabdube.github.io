@@ -14,8 +14,10 @@ pub struct GameFlags(pub u32);
 
 impl GameFlags {
     pub const UPDATE_ANIMATIONS: u32 = 0b001;
+    pub const UPDATE_TERRAIN: u32 = 0b010;
 
     flags!(update_animations, set_update_animations, clear_update_animations, Self::UPDATE_ANIMATIONS);
+    flags!(update_terrain, set_update_terrain, clear_update_terrain, Self::UPDATE_TERRAIN);
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
@@ -34,6 +36,14 @@ pub struct BaseSprite {
     pub position: PositionF32,
     pub texcoord: AABB,
     pub flags: BaseSpriteFlags,
+}
+
+impl BaseSprite {
+    pub fn rect(&self) -> AABB {
+        let [width, height] = self.texcoord.splat_size();
+        let pos = pos(self.position.x - width*0.5, self.position.y - height);
+        aabb(pos, self.texcoord.size())
+    }
 }
 
 #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable)]

@@ -54,24 +54,23 @@ impl StoreWriter {
     }
 
     pub fn write_array<T: IntoBytes+Immutable>(&mut self, values: &[T]) {
-        assert!(align_of::<T>() == MIN_ALIGN, "Data alignment must be 4 bytes");
+        assert!(align_of::<T>() <= MIN_ALIGN, "Data alignment must up to 4 bytes");
 
         let values_count = values.len();
-        if values_count == 0 {
-            self.write(&0u32);  // 0 for the size and no data
-            return;
-        }
-
         let values_size = size_of::<T>() * values_count;
-        let total_size = U32_SIZE + values_size;
+        let values_size_padded = crate::shared::align_up(values_size, MIN_ALIGN);
+        let total_size = U32_SIZE + U32_SIZE + values_size_padded;
         if self.must_realloc(total_size) {
             self.realloc(total_size);
         }
 
-        self.write_u32(values_count as u32);
+        self.write(&[values_count as u32, values_size_padded as u32]);
+        if values_count == 0 {
+            return;
+        }
 
         values.write_to_prefix(self.remaining_bytes()).unwrap();
-        self.data_offset += values_size;
+        self.data_offset += values_size_padded;
     }
 
     pub fn write_str(&mut self, value: &str) {
@@ -115,7 +114,7 @@ impl StoreWriter {
     }
 
     fn write_u32(&mut self, value: u32) {
-        // Assumes the buffer is already large enough
+        // The caller function must ensure there is enough remaining bytes
         value.write_to_prefix(self.remaining_bytes()).unwrap();
         self.data_offset += U32_SIZE;
     }  
@@ -154,8 +153,14 @@ impl<'a> StoreReader<'a> {
         Ok(value)
     }
 
-    pub fn read_array<'b, T: FromBytes+Immutable>(&mut self) -> &'b [T] {
+    pub fn read_array<'b, T: Copy+FromBytes+Immutable>(&mut self) -> &'b [T] {
+        unsafe { self.read_array_transmute() }
+    }
+
+    // Read array of values that may not be safe to cast `FromBytes`
+    pub unsafe fn read_array_transmute<'b, T: Copy>(&mut self) -> &'b [T] {
         let count = self.read_u32() as usize;
+        let values_size_padded = self.read_u32() as usize;
         if count == 0 {
             return &[];
         }
@@ -166,7 +171,7 @@ impl<'a> StoreReader<'a> {
         }
 
         let start_offset = self.data_offset;
-        self.data_offset += total_size;
+        self.data_offset += values_size_padded;
 
         unsafe { ::std::slice::from_raw_parts(self.data.as_ptr().add(start_offset) as *const T, count) }
     }

@@ -6,6 +6,12 @@ use assets::Assets;
 pub mod world;
 use world::World;
 
+pub mod terrain;
+use terrain::Terrain;
+
+pub mod debug;
+use debug::DebugState;
+
 use crate::shared::PositionF32;
 use crate::store::StoreLoad;
 
@@ -20,15 +26,25 @@ pub struct GlobalParams {
     pub frame_delta: f32,
 }
 
+#[derive(Default)]
 pub struct GameData {
     pub globals: GlobalParams,
     pub assets: Assets,
     pub world: World,
+    pub terrain: Terrain,
+    pub debug: DebugState,
 }
 
 impl GameData {
 
-    pub fn update_timing(&mut self, new_time: f64) {
+    pub fn reset(&mut self) {
+        self.world = World::default();
+        self.terrain = Terrain::default();
+    }
+
+    pub fn prepare_update(&mut self, new_time: f64) {
+        self.debug.clear();
+        
         let global = &mut self.globals;
         global.frame_delta = (new_time - global.time) as f32;
         global.time = new_time;
@@ -48,6 +64,11 @@ impl GameData {
         }
     }
 
+    pub fn initialize_terrain(&mut self, width: u32, height: u32) {
+        self.terrain.init(width, height);
+        self.globals.flags.set_update_terrain();
+    }
+
     pub fn add_pawn(&mut self, position: PositionF32) {
         let idle = self.assets.atlas.pawn_idle;
         self.world.add_pawn(position, idle.animate());
@@ -56,21 +77,12 @@ impl GameData {
 
 }
 
-impl Default for GameData {
-    fn default() -> Self {
-        GameData {
-            globals: GlobalParams::default(),
-            assets: Assets::default(),
-            world: World::default(),
-        }
-    }
-}
-
 impl StoreLoad for GameData {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
         self.globals.store(writer);
         self.assets.store(writer);
         self.world.store(writer);
+        self.terrain.store(writer);
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
@@ -78,6 +90,7 @@ impl StoreLoad for GameData {
         data.globals = GlobalParams::load(reader)?;
         data.assets = Assets::load(reader)?;
         data.world = World::load(reader)?;
+        data.terrain = Terrain::load(reader)?;
         Ok(data)
     }
 }

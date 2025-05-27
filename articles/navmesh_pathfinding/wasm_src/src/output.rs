@@ -1,5 +1,5 @@
 mod gpu_shared;
-use gpu_shared::*;
+pub use gpu_shared::*;
 
 mod message;
 use message::*;
@@ -46,8 +46,17 @@ impl GameOutput {
     pub fn update(client: &mut GameClient) {
         client.output.clear_index();
 
+        if client.data.globals.flags.update_terrain() {
+            GameOutput::update_terrain(client);
+            client.data.globals.flags.clear_update_terrain();
+        }
+
         if client.data.globals.total_sprites > 0 {
             GameOutput::render_sprites(client);
+        }
+
+        if client.data.debug.any() {
+            GameOutput::render_debug(client);
         }
 
         client.output.write_index();
@@ -138,6 +147,79 @@ impl GameOutput {
         gen_commands(&mut client.output, texture_id);
     }
 
+    fn update_terrain(client: &mut GameClient) {
+        const TERRAIN_SPRITE_SIZE: f32 = 64.0;
+
+        let data = &client.data;
+        let output = &mut client.output;
+
+        // Message
+        let cell_count = data.terrain.cell_count();
+        let update_terrain = UpdateTerrainParams { 
+            offset_bytes: output.data_offset,
+            size_bytes: cell_count * size_of::<gpu_shared::GpuTerrainSpriteData>(),
+            cell_count,
+        };
+
+        output.messages.push(OutputMessage { 
+            ty: OutputMessageType::UpdateTerrain,
+            params: OutputMessageParams { update_terrain } }
+        );
+    
+        // Data
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut sprite = GpuTerrainSpriteData::default();
+        for _ in 0..data.terrain.height() {
+            for _ in 0..data.terrain.width() {
+                sprite.position = [x, y];
+                sprite.uv = [0.0, 0.0];
+                output.push_data(&sprite);
+                x += TERRAIN_SPRITE_SIZE;
+            }
+
+            x = 0.0;
+            y += TERRAIN_SPRITE_SIZE;
+        }
+    }
+
+    fn render_debug(client: &mut GameClient) {
+        let output = &mut client.output;
+
+        // Preallocating vertex & index space
+        let [index_count, index_size, vertex_size] = client.data.debug.buffers_sizes();
+        let total_size = index_size + vertex_size;
+        if output.data[output.data_offset..].len() < total_size {
+            output.realloc_data(total_size);
+        }
+
+        output.data_offset = crate::shared::align_up(output.data_offset, 4);
+        let index_offset_base = output.data_offset;
+        let vertex_offset_base = index_offset_base + index_size;
+        output.data_offset += total_size;
+
+        // Generating vertex & indices
+        let (data, _) = output.data.split_at_mut(output.data_offset);
+        let (data, vertex_slice) = data.split_at_mut(vertex_offset_base);
+        let (_, index_slice) = data.split_at_mut(index_offset_base);
+        assert!(index_slice.len() == index_size && vertex_slice.len() == vertex_size);
+        client.data.debug.generate_mesh(index_slice, vertex_slice);
+
+        // Message generation
+        let draw_debug = DrawDebugParams {
+            index_offset_bytes: index_offset_base,
+            index_size_bytes: index_size,
+            vertex_offset_bytes: vertex_offset_base,
+            vertex_size_bytes: vertex_size,
+            count: index_count
+        };
+
+        client.output.messages.push(OutputMessage { 
+            ty: OutputMessageType::DrawDebug,
+            params: OutputMessageParams { draw_debug } }
+        );
+    }
+
     fn clear_index(&mut self) {
         self.data_offset = 0;
         self.data.clear();
@@ -181,7 +263,7 @@ impl Default for GameOutput {
         GameOutput {
             output_index: Box::leak(output_index),
             messages: Vec::with_capacity(16),
-            data: vec![0; 0x1000],
+            data: vec![0; 0x3000],
             data_offset: 0,
             order_sprites: Vec::with_capacity(32),
         }

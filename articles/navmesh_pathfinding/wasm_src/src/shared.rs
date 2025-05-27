@@ -26,6 +26,10 @@ impl AABB {
     pub fn splat_size(&self) -> [f32; 2] {
         [self.right - self.left, self.bottom - self.top]
     }
+
+    pub fn size(&self) -> SizeF32 {
+        SizeF32 { width: self.right - self.left, height: self.bottom - self.top }
+    }
 }
 
 //

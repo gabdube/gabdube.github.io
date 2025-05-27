@@ -18,12 +18,32 @@ pub struct DrawSpritesParams {
     pub texture_id: u32,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct UpdateTerrainParams {
+    pub offset_bytes: usize,
+    pub size_bytes: usize,
+    pub cell_count: usize,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct DrawDebugParams {
+    pub index_offset_bytes: usize,
+    pub index_size_bytes: usize,
+    pub vertex_offset_bytes: usize,
+    pub vertex_size_bytes: usize,
+    pub count: usize,
+}
+
 // Note: This is a union!
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union OutputMessageParams {
     pub update_sprites: UpdateSpritesParams,
     pub draw_sprites: DrawSpritesParams,
+    pub update_terrain: UpdateTerrainParams,
+    pub draw_debug: DrawDebugParams,
 }
 
 #[repr(u32)]
@@ -31,6 +51,8 @@ pub union OutputMessageParams {
 pub enum OutputMessageType {
     UpdateSprites,
     DrawSprites,
+    UpdateTerrain,
+    DrawDebug,
 }
 
 #[repr(C)]

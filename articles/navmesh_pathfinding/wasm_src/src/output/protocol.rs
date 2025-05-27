@@ -90,13 +90,14 @@ pub fn compile() -> String {
         size => { panic!("Unexpected pointer size \"{size}\""); }
     };
 
-
     generate_enum(
         &mut source,
         "OutputMessageType",
         &[
             ("UpdateSprites", OutputMessageType::UpdateSprites),
             ("DrawSprites", OutputMessageType::DrawSprites),
+            ("UpdateTerrain", OutputMessageType::UpdateTerrain),
+            ("DrawDebug", OutputMessageType::DrawDebug),
         ]
     );
 
@@ -133,6 +134,30 @@ pub fn compile() -> String {
         ],
     );
 
+    generate_struct(
+        &mut source, 
+        "UpdateTerrainParams", 
+        size_of::<UpdateTerrainParams>(),
+        &[
+            ("offset_bytes", pointer_type, offset_of!(UpdateTerrainParams, offset_bytes)),
+            ("size_bytes", pointer_type, offset_of!(UpdateTerrainParams, size_bytes)),
+            ("cell_count", pointer_type, offset_of!(UpdateTerrainParams, cell_count)),
+        ],
+    );
+
+    generate_struct(
+        &mut source, 
+        "DrawDebugParams", 
+        size_of::<DrawDebugParams>(),
+        &[
+            ("index_offset_bytes", pointer_type, offset_of!(DrawDebugParams, index_offset_bytes)),
+            ("index_size_bytes", pointer_type, offset_of!(DrawDebugParams, index_size_bytes)),
+            ("vertex_offset_bytes", pointer_type, offset_of!(DrawDebugParams, vertex_offset_bytes)),
+            ("vertex_size_bytes", pointer_type, offset_of!(DrawDebugParams, vertex_size_bytes)),
+            ("count", pointer_type, offset_of!(DrawDebugParams, count)),
+        ],
+    );
+
     generate_struct_with_custom_fields(
         &mut source, 
         "OutputMessage", 
@@ -143,7 +168,9 @@ pub fn compile() -> String {
         &[
             ("name", "return OutputMessageType[this.ty()] || this.ty();"),
             ("update_sprites", "return new UpdateSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
-            ("draw_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);")
+            ("draw_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("update_terrain", "return new UpdateTerrainParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_debug", "return new DrawDebugParams(this.view.buffer, this.view.byteOffset + 4);"),
         ]
     );
 

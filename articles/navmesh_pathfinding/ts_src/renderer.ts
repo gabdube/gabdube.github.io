@@ -2,7 +2,9 @@ import { set_last_error } from "./error";
 import { GameInterface, GameUpdates } from "./game_interface";
 import { EngineAssets, Texture } from "./assets";
 
-const BASE_ATTRIBUTES_CAPACITY = 1024 * 5; // 5 KB
+const BASE_SPRITES_CAPACITY = 1024 * 2;
+const BASE_TERRAIN_CAPACITY = 1024 * 10;
+const BASE_DEBUG_CAPACITY = 1024;
 
 class RendererCanvas {
     container: HTMLElement;
@@ -24,6 +26,9 @@ class SpritesBuffer {
     attributes: WebGLBuffer;
     attributes_size_bytes: number;
     attributes_capacity_bytes: number;
+
+    draw_count: number = 0;
+    draw: SpritesDraw[] = [];
 }
 
 class SpritesDraw {
@@ -38,10 +43,38 @@ class SpritesDraw {
     }
 }
 
+class Terrain {
+    index: WebGLBuffer;
+    vertex: WebGLBuffer;
+    attributes: WebGLBuffer;
+    attributes_size_bytes: number;
+    attributes_capacity_bytes: number;
+    texture: WebGLTexture;
+    instance_count: number;
+    vao: WebGLVertexArrayObject;
+}
+
+class Debug {
+    index: WebGLBuffer;
+    index_capacity: number;
+    vertex: WebGLBuffer;
+    vertex_capacity: number;
+    count: number;
+    vao: WebGLVertexArrayObject;
+}
+
 class RendererShaders {
     sprites_attributes: number[];  // position, instance_position, instance_texcoord, instance_data
     sprites_uniforms: WebGLUniformLocation[];  // View position, View size
     sprites: WebGLProgram;
+
+    terrain_attributes: number[];  // position, instance_position, instance_texcoord
+    terrain_uniforms: WebGLUniformLocation[];  // View position, View size
+    terrain: WebGLProgram;
+
+    debug_attributes: number[]; // position, color
+    debug_uniforms: WebGLUniformLocation[];  // View position, View size
+    debug: WebGLProgram
 }
 
 export class Renderer {
@@ -55,12 +88,11 @@ export class Renderer {
     visible: boolean = false;
 
     shaders: RendererShaders = new RendererShaders();
-
     textures: WebGLTexture[] = [];
 
     sprites: SpritesBuffer = new SpritesBuffer();
-    sprites_draw_count: number = 0;
-    sprites_draw: SpritesDraw[] = [];
+    terrain: Terrain = new Terrain();
+    debug: Debug = new Debug();
 
     vao_pool_next: number = 0;
     vao_pool: WebGLVertexArrayObject[] = [];
@@ -69,7 +101,6 @@ export class Renderer {
         if ( !this.setup_canvas() ) { return false };
         if ( !this.setup_context() ) { return false; }
         if ( !this.setup_framebuffer() ) { return false; }
-        
         this.setup_base_context();
 
         return true;
@@ -81,8 +112,10 @@ export class Renderer {
         if (!this.setup_shaders()) { return false; };
         if (!this.preload_textures()) { return false; }
 
-        this.setup_sprites();
         this.setup_pools();
+        this.setup_terrain();
+        this.setup_sprites();
+        this.setup_debug();
         this.setup_uniforms();
 
         this.visible = true;
@@ -91,7 +124,7 @@ export class Renderer {
     }
 
     //
-    // Updates
+    // Resize
     //
 
     private handle_resize_framebuffer(): boolean {
@@ -128,6 +161,8 @@ export class Renderer {
         const size = new Float32Array([this.canvas.width, this.canvas.height]);
         const size_uniforms = [
             [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+            [this.shaders.debug, this.shaders.debug_uniforms[1]],
         ];
 
         for (let [shader, uniform] of size_uniforms) {
@@ -146,6 +181,10 @@ export class Renderer {
         return true;
     }
 
+    //
+    // Updates
+    //
+
     private next_vao(): WebGLVertexArrayObject {
         const vao_index = this.vao_pool_next;
         if (vao_index >= this.vao_pool.length) {
@@ -158,14 +197,15 @@ export class Renderer {
     }
 
     private next_sprite_draw(): SpritesDraw {
-        const draw_index = this.sprites_draw_count;
-        if (draw_index >= this.sprites_draw.length) {
-            this.sprites_draw.push(new SpritesDraw());
+        const sprites = this.sprites;
+        const draw_index = sprites.draw_count;
+        if (draw_index >= sprites.draw.length) {
+            sprites.draw.push(new SpritesDraw());
         }
 
-        this.sprites_draw_count += 1;
+        sprites.draw_count += 1;
 
-        return this.sprites_draw[draw_index];
+        return sprites.draw[draw_index];
     }
 
     private realloc_sprites(min_size: number) {
@@ -173,7 +213,7 @@ export class Renderer {
         const old_buffer = this.sprites.attributes;
 
         this.sprites.attributes = ctx.createBuffer();
-        this.sprites.attributes_capacity_bytes = this.sprites.attributes_capacity_bytes + min_size + 2048;
+        this.sprites.attributes_capacity_bytes = min_size + BASE_SPRITES_CAPACITY;
 
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
         ctx.bufferData(ctx.ARRAY_BUFFER, this.sprites.attributes_capacity_bytes, ctx.DYNAMIC_DRAW);
@@ -184,8 +224,11 @@ export class Renderer {
         const ctx = this.ctx;
         const offset = message.offset_bytes();
         const size = message.size_bytes();
+
+        ctx.bindVertexArray(null);
+
         if (size > this.sprites.attributes_capacity_bytes) {
-            this.realloc_sprites(this.sprites.attributes_capacity_bytes)
+            this.realloc_sprites(size)
         }
 
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
@@ -237,12 +280,91 @@ export class Renderer {
         draw.vao = this.build_sprite_vao(instance_base);
     }
 
+    private realloc_terrain(min_size: number) {
+        const ctx = this.ctx;
+        const old_buffer = this.terrain.attributes;
+
+        this.terrain.attributes = ctx.createBuffer();
+        this.terrain.attributes_capacity_bytes = min_size + BASE_TERRAIN_CAPACITY;
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+        ctx.bufferData(ctx.ARRAY_BUFFER, this.terrain.attributes_capacity_bytes, ctx.STATIC_DRAW);
+        ctx.deleteBuffer(old_buffer);
+    }
+
+    private update_terrain(updates: GameUpdates, message: any) {
+        const ctx = this.ctx;
+
+        const offset = message.offset_bytes();
+        const size = message.size_bytes();
+        this.terrain.instance_count = message.cell_count();
+
+        ctx.bindVertexArray(this.terrain.vao);
+
+        if (size > this.terrain.attributes_capacity_bytes) {
+            this.realloc_terrain(size)
+            this.setup_terrain_vao();
+        }
+        
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+        ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
+    }
+
+    private realloc_debug(index_size: number, vertex_size: number) {
+        const ctx = this.ctx;
+        const debug = this.debug;
+
+        if (debug.index_capacity < index_size) {
+            const old = debug.index;
+            debug.index = ctx.createBuffer();
+            debug.index_capacity = index_size + BASE_DEBUG_CAPACITY;
+            ctx.bindBuffer(ctx.ARRAY_BUFFER, debug.index);
+            ctx.bufferData(ctx.ARRAY_BUFFER, debug.index_capacity, ctx.DYNAMIC_DRAW);
+            ctx.deleteBuffer(old);
+        }
+
+        if (debug.vertex_capacity < vertex_size) {
+            const old = debug.vertex;
+            debug.vertex = ctx.createBuffer();
+            debug.vertex_capacity = vertex_size + BASE_DEBUG_CAPACITY;
+            ctx.bindBuffer(ctx.ARRAY_BUFFER, debug.vertex);
+            ctx.bufferData(ctx.ARRAY_BUFFER, debug.vertex_capacity, ctx.DYNAMIC_DRAW);
+            ctx.deleteBuffer(old);
+        }
+    }
+
+    private draw_debug(updates: GameUpdates, message: any) {
+        const ctx = this.ctx;
+        const debug = this.debug;
+
+        const index_offset = message.index_offset_bytes();
+        const index_size = message.index_size_bytes();
+        const vertex_offset = message.vertex_offset_bytes();
+        const vertex_size = message.vertex_size_bytes();
+        debug.count = message.count();
+
+        ctx.bindVertexArray(this.debug.vao);
+
+        if (debug.index_capacity < index_size || debug.vertex_capacity < vertex_size) {
+            this.realloc_debug(index_size, vertex_size);
+            this.setup_debug_vao();
+        }
+
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.debug.index);
+        ctx.bufferSubData(ctx.ELEMENT_ARRAY_BUFFER, 0, updates.get_data(index_offset, index_size));
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.debug.vertex);
+        ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(vertex_offset, vertex_size));
+    }
+
     private prepare_updates() {
-        this.sprites_draw_count = 0;
+        this.ctx.bindVertexArray(null);
+        this.sprites.draw_count = 0;
+        this.debug.count = 0;
         this.vao_pool_next = 0;
     }
 
-    update(game: GameInterface) {
+    update(game: GameInterface) { 
         this.prepare_updates();
 
         const updates = game.updates();
@@ -259,6 +381,14 @@ export class Renderer {
                     this.draw_sprites(message.draw_sprites());
                     break;
                 }
+                case "UpdateTerrain": {
+                    this.update_terrain(updates, message.update_terrain())
+                    break;
+                }
+                case "DrawDebug": {
+                    this.draw_debug(updates, message.draw_debug())
+                    break;
+                }
                 default: {
                     console.log(`Warning: A drawing update with an unknown type ${message_name} was received`);
                 }
@@ -270,18 +400,42 @@ export class Renderer {
     // Render
     //
 
-    render_sprites() {
+    private render_terrain() {
         const SPRITE_INDEX_COUNT: number = 6;
         const ctx = this.ctx;
+
+        ctx.useProgram(this.shaders.terrain);
+        ctx.activeTexture(ctx.TEXTURE0);
+
+        ctx.bindTexture(ctx.TEXTURE_2D, this.terrain.texture);
+        ctx.bindVertexArray(this.terrain.vao);
+        ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, this.terrain.instance_count);
+    }
+
+    private render_sprites() {
+        const SPRITE_INDEX_COUNT: number = 6;
+        const ctx = this.ctx;
+        const sprites = this.sprites;
 
         ctx.useProgram(this.shaders.sprites);
         ctx.activeTexture(ctx.TEXTURE0);
 
-        for (let i = 0; i < this.sprites_draw_count; i += 1) {
-            const draw = this.sprites_draw[i];
+        for (let i = 0; i < sprites.draw_count; i += 1) {
+            const draw = sprites.draw[i];
             ctx.bindTexture(ctx.TEXTURE_2D, draw.texture);
             ctx.bindVertexArray(draw.vao);
             ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, draw.instance_count);
+        }
+    }
+
+    private render_debug() {
+        const ctx = this.ctx;
+        const debug = this.debug;
+
+        if (debug.count > 0) {
+            ctx.useProgram(this.shaders.debug);
+            ctx.bindVertexArray(debug.vao);
+            ctx.drawElementsInstanced(ctx.TRIANGLES, debug.count, ctx.UNSIGNED_SHORT, 0, 1);
         }
     }
 
@@ -292,8 +446,10 @@ export class Renderer {
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, this.framebuffer);
         ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 1.0]);
 
+        this.render_terrain();
         this.render_sprites();
-        
+        this.render_debug();
+
         ctx.bindFramebuffer(ctx.READ_FRAMEBUFFER, this.framebuffer);
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, null);
         ctx.blitFramebuffer(0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height, ctx.COLOR_BUFFER_BIT, ctx.LINEAR);
@@ -332,7 +488,7 @@ export class Renderer {
             depth: false,
             stencil: false,
             antialias: false,
-            premultipliedAlpha: true,
+            premultipliedAlpha: false,
             preserveDrawingBuffer: false,
         });
 
@@ -400,8 +556,8 @@ export class Renderer {
         const ctx = this.ctx;
         ctx.disable(ctx.CULL_FACE);
         ctx.enable(ctx.BLEND);
-        ctx.blendFuncSeparate(ctx.ONE, ctx.ONE_MINUS_SRC_ALPHA, ctx.ONE, ctx.ONE_MINUS_DST_ALPHA);
-        ctx.blendEquationSeparate(ctx.FUNC_ADD, ctx.FUNC_ADD);
+        ctx.blendFunc(ctx.ONE, ctx.ONE_MINUS_SRC_ALPHA);
+        ctx.blendEquation(ctx.FUNC_ADD);
     }
 
     private setup_shaders(): boolean {
@@ -421,11 +577,35 @@ export class Renderer {
             return false;
         }
 
+        const terrain = build_shader(ctx, assets, "terrain",
+            ["in_position", "in_instance_position", "in_instance_texcoord"],
+            ["view_position", "view_size"]
+        );
+        if (terrain) {
+            shaders.terrain = terrain.program;
+            shaders.terrain_attributes = terrain.attributes;
+            shaders.terrain_uniforms = terrain.uniforms;
+        } else {
+            return false;
+        }
+
+        const debug = build_shader(ctx, assets, "debug",
+            ["in_position", "in_color"],
+            ["view_position", "view_size"]
+        );
+        if (debug) {
+            shaders.debug = debug.program;
+            shaders.debug_attributes = debug.attributes;
+            shaders.debug_uniforms = debug.uniforms;
+        } else {
+            return false;
+        }
+
         return true;
     }
 
     private preload_textures(): boolean {
-        const to_preload = ["atlas"];
+        const to_preload = ["atlas", "terrain"];
 
         for (let name of to_preload) {
             const texture = this.assets.textures.get(name);
@@ -440,45 +620,160 @@ export class Renderer {
         return true;
     }
 
-    private setup_sprites() {
+    private setup_pools() {
         const ctx = this.ctx;
-        this.sprites.index = ctx.createBuffer();
-        this.sprites.vertex = ctx.createBuffer();
-        this.sprites.attributes = ctx.createBuffer();
-        this.sprites.attributes_capacity_bytes = BASE_ATTRIBUTES_CAPACITY;
-        this.sprites.attributes_size_bytes = 0;
 
-        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.sprites.index);
+        for (let i = 0; i < 8; i+=1) {
+            this.vao_pool.push(ctx.createVertexArray());
+            this.sprites.draw.push(new SpritesDraw());
+        }
+    }
+
+    private setup_terrain_vao() {
+        const TERRAIN_SPRITE_SIZE = 16;
+        const ctx = this.ctx;
+        const [position, instance_position, instance_texcoord] = this.shaders.terrain_attributes;
+
+        ctx.bindVertexArray(this.terrain.vao);
+
+        // Vertex data
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.terrain.index);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.vertex);
+        ctx.enableVertexAttribArray(position);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, 8, 0);
+
+        // Instance Data
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+
+        ctx.enableVertexAttribArray(instance_position);
+        ctx.vertexAttribPointer(instance_position, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 0);
+        ctx.vertexAttribDivisor(instance_position, 1);
+
+        ctx.enableVertexAttribArray(instance_texcoord);
+        ctx.vertexAttribPointer(instance_texcoord, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 8);
+        ctx.vertexAttribDivisor(instance_texcoord, 1);
+
+        ctx.bindVertexArray(null);
+    }
+
+    private setup_terrain() {
+        const ctx = this.ctx;
+        const terrain = this.terrain;
+        
+        terrain.index = ctx.createBuffer();
+        terrain.vertex = ctx.createBuffer();
+        terrain.attributes = ctx.createBuffer();
+        terrain.attributes_capacity_bytes = BASE_TERRAIN_CAPACITY;
+        terrain.attributes_size_bytes = 0;
+        terrain.instance_count = 0;
+
+        terrain.vao = this.vao_pool.pop() as WebGLVertexArrayObject;
+
+        const texture_id = this.assets.textures.get("terrain")?.id as number;  // Check is handled in preload_textures
+        terrain.texture = this.textures[texture_id];
+
+        ctx.bindVertexArray(terrain.vao);
+
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, terrain.index);
         ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);
 
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.vertex);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, terrain.vertex);
         ctx.bufferData(ctx.ARRAY_BUFFER,  new Float32Array([
             0.0, 0.0, // V0
             1.0, 0.0, // V1
             0.0, 1.0, // V2
             1.0, 1.0, // V3
         ]), ctx.STATIC_DRAW);
-        
-       
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
-        ctx.bufferData(ctx.ARRAY_BUFFER, BASE_ATTRIBUTES_CAPACITY, ctx.DYNAMIC_DRAW);
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, terrain.attributes);
+        ctx.bufferData(ctx.ARRAY_BUFFER, terrain.attributes_capacity_bytes, ctx.STATIC_DRAW);
+
+        this.setup_terrain_vao();
     }
 
-    private setup_pools() {
+    private setup_sprites() {
         const ctx = this.ctx;
+        const sprites = this.sprites;
 
-        for (let i = 0; i < 8; i+=1) {
-            this.vao_pool.push(ctx.createVertexArray());
-            this.sprites_draw.push(new SpritesDraw());
-        }
+        sprites.index = ctx.createBuffer();
+        sprites.vertex = ctx.createBuffer();
+        sprites.attributes = ctx.createBuffer();
+        sprites.attributes_capacity_bytes = BASE_SPRITES_CAPACITY;
+        sprites.attributes_size_bytes = 0;
+
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, sprites.index);
+        ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.vertex);
+        ctx.bufferData(ctx.ARRAY_BUFFER,  new Float32Array([
+            0.0, 0.0, // V0
+            1.0, 0.0, // V1
+            0.0, 1.0, // V2
+            1.0, 1.0, // V3
+        ]), ctx.STATIC_DRAW);
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.attributes);
+        ctx.bufferData(ctx.ARRAY_BUFFER, sprites.attributes_capacity_bytes, ctx.DYNAMIC_DRAW);
     }
 
+    private setup_debug_vao() {
+        const DEBUG_VERTEX_SIZE = 12;
+
+        const ctx = this.ctx;
+        const [position, color] = this.shaders.debug_attributes;
+        ctx.bindVertexArray(this.debug.vao);
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.debug.index)
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.debug.vertex)
+        ctx.enableVertexAttribArray(position);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, DEBUG_VERTEX_SIZE, 0);
+        ctx.enableVertexAttribArray(color);
+        ctx.vertexAttribPointer(color, 4, ctx.UNSIGNED_BYTE, true, DEBUG_VERTEX_SIZE, 8);
+        ctx.bindVertexArray(null);
+    }
+
+    private setup_debug() {
+        const ctx = this.ctx;
+        const debug = this.debug;
+
+        debug.index = ctx.createBuffer();
+        debug.index_capacity = BASE_DEBUG_CAPACITY;
+        debug.vertex = ctx.createBuffer();
+        debug.vertex_capacity = (BASE_DEBUG_CAPACITY * 1.5) | 0;
+        debug.vao = this.vao_pool.pop() as WebGLVertexArrayObject
+
+        // Vertex
+        ctx.bindVertexArray(debug.vao);
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, debug.index);
+        ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, debug.index_capacity, ctx.DYNAMIC_DRAW);
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, debug.vertex);
+        ctx.bufferData(ctx.ARRAY_BUFFER, debug.vertex_capacity, ctx.DYNAMIC_DRAW);
+
+        console.log(debug);
+
+        // Vao
+        this.setup_debug_vao();
+    }
+   
     private setup_uniforms() {
         const ctx = this.ctx;
-        const [view_position, view_size] = this.shaders.sprites_uniforms;
+        const position = new Float32Array([0.0, 0.0]);
+        const size = new Float32Array([this.canvas.width, this.canvas.height]);
+
+        let [view_position, view_size] = this.shaders.sprites_uniforms;
         ctx.useProgram(this.shaders.sprites);
-        ctx.uniform2f(view_position, 0.0, 0.0);
-        ctx.uniform2f(view_size, this.canvas.width, this.canvas.height);
+        ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
+
+        [view_position, view_size] = this.shaders.terrain_uniforms;
+        ctx.useProgram(this.shaders.terrain);
+        ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
+
+        [view_position, view_size] = this.shaders.debug_uniforms;
+        ctx.useProgram(this.shaders.debug);
+        ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
     }
 }
 

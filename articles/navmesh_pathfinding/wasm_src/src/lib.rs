@@ -70,7 +70,7 @@ impl GameClient {
     }
 
     pub fn update(&mut self, time: f64) {
-        self.data.update_timing(time);
+        self.data.prepare_update(time);
 
         match self.state {
             state::GameState::Uninitialized => state::uninitialized::update(self),
@@ -88,7 +88,7 @@ impl GameClient {
 
 impl GameClient {
     pub fn on_reload(&mut self) {
-        
+        state::final_demo::init(self);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {
