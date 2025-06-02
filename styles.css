@@ -1,8 +1,13 @@
+@font-face {
+    font-family: Fira Code;
+    src: url("./FiraCode-Regular.ttf");
+  }
+
 body {
     font-family: 'Fira Code', 'Source Code Pro', Consolas, Monaco, Menlo, monospace;
     margin: 0;
     padding: 0;
-    background-color: #302b28;
+    background-color: rgb(48, 43, 40);
     color: rgb(224, 224, 224);
     height: 100vh;
     overflow: hidden;
@@ -178,7 +183,7 @@ body.article > footer {
 
     body.article > #separator {
         width: 5px;
-        background-color: #000000;
+        background-color: #365295;
         flex-shrink: 0;
 
         grid-column-start: separator;

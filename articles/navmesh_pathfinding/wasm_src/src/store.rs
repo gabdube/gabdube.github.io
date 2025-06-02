@@ -32,7 +32,7 @@ impl StoreWriter {
 
     pub fn new() -> Self {
         StoreWriter { 
-            data: vec![0u8; 10240],    // 10kb should be more than enough
+            data: vec![0u8; 1024*1024],    // 1mb should be more than enough
             data_offset: 0
         }
     }
@@ -105,6 +105,20 @@ impl StoreWriter {
         }
     }
 
+    pub fn write_string_array_hashmap(&mut self, values: &fnv::FnvHashMap<String, Vec<u8>>) {
+        let values_count = values.len() as u32;
+        self.write(&values_count);
+
+        if values_count == 0 {
+            return;
+        }
+        
+        for (key, value) in values.iter() {
+            self.write_str(key);
+            self.write_array(value);
+        }
+    }
+
     fn must_realloc(&self, size: usize) -> bool {
         self.data[self.data_offset..].len() < size
     }
@@ -122,7 +136,7 @@ impl StoreWriter {
     #[inline(never)]
     #[cold]
     fn realloc(&mut self, min_size: usize) {
-        self.data.reserve_exact(crate::shared::align_up(min_size, 0x800));  // 2kb block size minimum
+        self.data.reserve_exact(crate::shared::align_up(min_size, 0x10000));
         unsafe { self.data.set_len(self.data.capacity()); }
     }
 
@@ -200,6 +214,22 @@ impl<'a> StoreReader<'a> {
         for _ in 0..count {
             let key = self.read_str().to_string();
             let value = self.try_read().unwrap();
+            out.insert(key, value);
+        }
+
+        out
+    }
+
+    pub fn read_string_array_hashmap(&mut self) -> fnv::FnvHashMap<String, Vec<u8>> {
+        let mut out = fnv::FnvHashMap::default();
+        let count = self.read_u32() as usize;
+        if count == 0 {
+            return out;
+        }
+
+        for _ in 0..count {
+            let key = self.read_str().to_string();
+            let value: Vec<u8> = self.read_array().to_vec();
             out.insert(key, value);
         }
 

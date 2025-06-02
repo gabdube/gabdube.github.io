@@ -1,6 +1,6 @@
 use zerocopy_derive::{Immutable, IntoBytes, FromBytes};
 
-#[derive(Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct PositionF32 {
     pub x: f32,

@@ -43,6 +43,7 @@ impl AtlasData {
 
 pub struct Assets {
     pub textures: FnvHashMap<String, Texture>,
+    pub fonts: FnvHashMap<String, Vec<u8>>,
     pub atlas: AtlasData
 }
 
@@ -89,6 +90,18 @@ impl Assets {
         Ok(())
     }
 
+    fn load_font(&mut self, init: &GameClientInit, args: &[&str]) -> Result<(), Error> {
+        let &font_name = args.get(1)
+            .ok_or_else(|| assets_err!("Missing font name") )?;
+
+        let font_data = init.bin_assets.get(font_name)
+            .ok_or_else(|| assets_err!("Failed to match font name to font data") )?;
+
+        self.fonts.insert(font_name.to_string(), font_data.clone());
+
+        Ok(())
+    }
+
     fn import_assets_index(&mut self, init: &GameClientInit) -> Result<(), Error> {
         let mut error: Option<Error> = None;
 
@@ -101,6 +114,9 @@ impl Assets {
                 "CSV" => {
                     self.load_csv(init, args)
                 },
+                "FONT" => {
+                    self.load_font(init, args)
+                }
                 "SHADER" => Ok(()),
                 _ => { Err(assets_err!("Unknown asset type {:?}", args[0])) }
             };
@@ -122,12 +138,14 @@ impl Assets {
 impl StoreLoad for Assets {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
         writer.write_string_hashmap(&self.textures);
+        writer.write_string_array_hashmap(&self.fonts);
         writer.write(&self.atlas);
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
         let mut data = Assets::default();
         data.textures = reader.read_string_hashmap();
+        data.fonts = reader.read_string_array_hashmap();
         data.atlas = AtlasData::load(reader)?;
         Ok(data)
     }
@@ -143,6 +161,7 @@ impl Default for Assets {
     fn default() -> Self {
         Assets {
             textures: FnvHashMap::default(),
+            fonts: FnvHashMap::default(),
             atlas: AtlasData::default(),
         }
     }

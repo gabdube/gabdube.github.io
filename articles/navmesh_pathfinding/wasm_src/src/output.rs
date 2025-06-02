@@ -59,6 +59,11 @@ impl GameOutput {
             GameOutput::render_debug(client);
         }
 
+        if client.data.globals.flags.update_gui() {
+            GameOutput::render_gui(client);
+            client.data.globals.flags.clear_update_gui();
+        }
+
         client.output.write_index();
     }
 
@@ -165,7 +170,7 @@ impl GameOutput {
             ty: OutputMessageType::UpdateTerrain,
             params: OutputMessageParams { update_terrain } }
         );
-    
+
         // Data
         let mut x = 0.0;
         let mut y = 0.0;
@@ -220,10 +225,100 @@ impl GameOutput {
         );
     }
 
+    #[cfg(feature="gui")]
+    fn update_gui_textures(&mut self, delta: &egui::TexturesDelta) {
+        for (id, delta) in &delta.set {
+            // Upload data
+            let pixels_offset;
+            let pixels_size;
+            let [x, y] = delta.pos.unwrap_or([0, 0]);
+            let [width, height] = delta.image.size();
+            match &delta.image {
+                egui::ImageData::Color(_image) => { panic!("Unsupported"); },
+                egui::ImageData::Font(image) => {
+                    let data: Vec<u8> = image.srgba_pixels(None).flat_map(|a| a.to_array() ).collect();
+                    pixels_size = data.len();
+                    pixels_offset = self.push_bytes(&data);
+                }
+            }
+
+            // Message
+            let gui_texture_update = GuiTextureUpdateParams {
+                pixels_offset,
+                pixels_size,
+                x: x as u32,
+                y: y as u32,
+                width: width as u32,
+                height: height as u32,
+                id: match id {
+                    egui::TextureId::Managed(x) => *x as u32,
+                    egui::TextureId::User(x) => *x as u32,
+                }
+            };
+
+            self.messages.push(OutputMessage { 
+                ty: OutputMessageType::GuiTextureUpdate,
+                params: OutputMessageParams { gui_texture_update } }
+            );
+        }
+    }
+
+    #[cfg(feature="gui")]
+    fn update_gui_mesh(&mut self, mesh: &Vec<egui::ClippedPrimitive>) {
+        use egui::epaint::{Primitive, Vertex, Rect};
+
+        fn update_mesh(clip: &Rect, mesh: &egui::Mesh, output: &mut GameOutput) {
+            let index_offset_bytes = output.push_bytes(&mesh.indices);
+            let vertex_offset_bytes = output.push_bytes(&mesh.vertices);
+            let index_size_bytes = mesh.indices.len() * size_of::<u32>();
+            let vertex_size_bytes = mesh.vertices.len() * size_of::<Vertex>();
+            let gui_mesh_update = GuiMeshUpdateParams {
+                index_offset_bytes,
+                index_size_bytes,
+                vertex_offset_bytes,
+                vertex_size_bytes,
+                count: mesh.indices.len() as u32,
+                clip: [clip.min.x, clip.min.y, clip.max.x, clip.max.y],
+                texture_id: match mesh.texture_id {
+                    egui::TextureId::Managed(x) => x as u32,
+                    egui::TextureId::User(x) => x as u32,
+                }
+            };
+
+            output.messages.push(OutputMessage { 
+                ty: OutputMessageType::GuiMeshUpdate,
+                params: OutputMessageParams { gui_mesh_update } }
+            );
+        }
+
+        for clipped_primitive in mesh.iter() {
+            match &clipped_primitive.primitive {
+                Primitive::Callback(_) => { panic!("Unsupported") },
+                Primitive::Mesh(mesh) => {
+                    update_mesh(&clipped_primitive.clip_rect, mesh, self);
+                }
+            }
+        }
+    }
+    
+    #[cfg(feature="gui")]
+    fn render_gui(client: &mut GameClient) {
+        let output = &mut client.output;
+
+        output.messages.push(OutputMessage { ty: OutputMessageType::ResetGui, params: OutputMessageParams { none: () } });
+
+        let delta = client.data.gui.texture_delta();
+        output.update_gui_textures(&delta);
+
+        let mesh = client.data.gui.tesselate();
+        output.update_gui_mesh(&mesh);
+    }
+
+    #[cfg(not(feature="gui"))]
+    fn render_gui(_client: &mut GameClient) {}
+
     fn clear_index(&mut self) {
         self.data_offset = 0;
-        self.data.clear();
-
         self.messages.clear();
         self.order_sprites.clear();
     }
@@ -247,10 +342,27 @@ impl GameOutput {
         self.data_offset += size;
     }
 
+    fn push_bytes<T: Copy>(&mut self, data: &[T]) -> usize {
+        let (_, bytes, _) = unsafe { data.align_to::<u8>() };
+        let data_offset = crate::shared::align_up(self.data_offset, align_of::<T>());
+
+        let size = bytes.len();
+        if self.data[data_offset..].len() < size {
+            self.realloc_data(size)
+        }
+
+        unsafe {
+            ::std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.data[data_offset..].as_mut_ptr(), size);
+        }
+
+        self.data_offset = data_offset + size;
+        data_offset
+    }
+
     #[inline(never)]
     #[cold]
     fn realloc_data(&mut self, min_size: usize) {
-        self.data.reserve_exact(crate::shared::align_up(min_size, 0x1000));
+        self.data.reserve_exact(crate::shared::align_up(min_size, 0x8000));
         unsafe { self.data.set_len(self.data.capacity()); }
     }
 
@@ -263,7 +375,7 @@ impl Default for GameOutput {
         GameOutput {
             output_index: Box::leak(output_index),
             messages: Vec::with_capacity(16),
-            data: vec![0; 0x3000],
+            data: vec![0; 0xF0000],
             data_offset: 0,
             order_sprites: Vec::with_capacity(32),
         }

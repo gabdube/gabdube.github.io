@@ -17,10 +17,12 @@ use store::StoreLoad;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-#[derive(Default)]
 pub struct GameClientInit {
     pub(crate) assets_bundle: String,
-    pub(crate) text_assets: FnvHashMap<String, String>
+    pub(crate) text_assets: FnvHashMap<String, String>,
+    pub(crate) bin_assets: FnvHashMap<String, Vec<u8>>,
+    pub(crate) max_texture_size: u32,
+    pub(crate) screen_size: shared::SizeF32,
 }
 
 #[wasm_bindgen]
@@ -30,6 +32,9 @@ impl GameClientInit {
         GameClientInit {
             assets_bundle: String::new(),
             text_assets: FnvHashMap::default(),
+            bin_assets: FnvHashMap::default(),
+            max_texture_size: 2048,
+            screen_size: shared::size(0.0, 0.0),
         }
     }
 
@@ -41,6 +46,18 @@ impl GameClientInit {
         self.text_assets.insert(name, value);
     }
 
+    pub fn upload_bin_asset(&mut self, name: String, data: Vec<u8>) {
+        self.bin_assets.insert(name, data);
+    }
+
+    pub fn max_texture_size(&mut self, value: u32) {
+        self.max_texture_size = u32::min(value, 4096); // We don't need more than 4096px
+    }
+
+    pub fn screen_size(&mut self, width: f32, height: f32) {
+        self.screen_size.width = width;
+        self.screen_size.height = height;
+    }
 
 }
 
@@ -66,6 +83,11 @@ impl GameClient {
             return None;
         }
 
+        if let Err(e) = client.data.gui.init(&init, &client.data.assets) {
+            log_err!(e);
+            return None;
+        }
+
         Some(client)
     }
 
@@ -77,11 +99,31 @@ impl GameClient {
             state::GameState::FinalDemo => state::final_demo::update(self, time),
         }
 
+        self.data.update_gui();
+
         output::GameOutput::update(self);
     }
 
     pub fn updates_ptr(&self) -> *const output::OutputIndex {
         self.output.output_index
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.data.gui.resize(width, height);
+    }
+
+    pub fn update_mouse_position(&mut self, x: f32, y: f32) {
+        self.data.update_mouse_position(x, y);
+        self.data.gui.update_mouse_position(x, y);
+    }
+
+    pub fn update_mouse_buttons(&mut self, button: u8, pressed: bool) {
+        let position = self.data.globals.mouse_position;
+        self.data.gui.update_mouse_buttons(position, button, pressed);
+    }
+
+    pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
+        self.data.gui.update_keys(key_name, pressed);
     }
 
 }

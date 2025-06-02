@@ -36,14 +36,41 @@ pub struct DrawDebugParams {
     pub count: usize,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct GuiTextureUpdateParams {
+    pub pixels_offset: usize,
+    pub pixels_size: usize,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub id: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct GuiMeshUpdateParams {
+    pub index_offset_bytes: usize,
+    pub index_size_bytes: usize,
+    pub vertex_offset_bytes: usize,
+    pub vertex_size_bytes: usize,
+    pub clip: [f32; 4],
+    pub count: u32,
+    pub texture_id: u32,
+}
+
 // Note: This is a union!
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union OutputMessageParams {
+    pub none: (),
     pub update_sprites: UpdateSpritesParams,
     pub draw_sprites: DrawSpritesParams,
     pub update_terrain: UpdateTerrainParams,
     pub draw_debug: DrawDebugParams,
+    pub gui_texture_update: GuiTextureUpdateParams,
+    pub gui_mesh_update: GuiMeshUpdateParams,
 }
 
 #[repr(u32)]
@@ -53,6 +80,9 @@ pub enum OutputMessageType {
     DrawSprites,
     UpdateTerrain,
     DrawDebug,
+    GuiTextureUpdate,
+    GuiMeshUpdate,
+    ResetGui,
 }
 
 #[repr(C)]

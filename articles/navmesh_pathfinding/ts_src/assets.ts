@@ -1,4 +1,4 @@
-import { fetch_text, fetch_blob } from "./helpers";
+import { fetch_text, fetch_blob, fetch_arraybuffer } from "./helpers";
 import { set_last_error } from "./error";
 
 const ASSETS_BUNDLE = `
@@ -8,6 +8,8 @@ CSV;atlas_sprites;assets/atlas.csv;
 SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
+SHADER;gui;assets/gui.vert.glsl;assets/gui.frag.glsl;
+FONT;firacode;/FiraCode-Regular.ttf
 `;
 
 export class Shader {
@@ -36,6 +38,7 @@ export class EngineAssets {
     bundle: string = ASSETS_BUNDLE;
     shaders: Map<string, Shader> = new Map();
     csv: Map<string, string> = new Map();
+    fonts: Map<string, ArrayBuffer> = new Map();
 
     textures: Map<string, Texture> = new Map();
     textures_by_id: Texture[] = [];
@@ -84,6 +87,12 @@ export class EngineAssets {
                     const vertex_path = args[2];
                     const fragment_path = args[3];
                     asset_loading_promises.push(this.load_shader(name, vertex_path, fragment_path));
+                    break;
+                }
+                case "FONT": {
+                    const name = args[1];
+                    const path = args[2];
+                    asset_loading_promises.push(this.load_font(name, path));
                     break;
                 }
                 default: {
@@ -142,6 +151,17 @@ export class EngineAssets {
 
         this.shaders.set(name, new Shader(vertex_text, fragment_text));
 
+        return true;
+    }
+
+    private async load_font(name: string, path: string): Promise<boolean> {
+        const data = await fetch_arraybuffer(path);
+        if (!data) {
+            return false;
+        }
+
+        this.fonts.set(name, data);
+    
         return true;
     }
 

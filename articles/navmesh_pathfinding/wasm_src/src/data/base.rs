@@ -15,9 +15,11 @@ pub struct GameFlags(pub u32);
 impl GameFlags {
     pub const UPDATE_ANIMATIONS: u32 = 0b001;
     pub const UPDATE_TERRAIN: u32 = 0b010;
+    pub const UPDATE_GUI: u32 = 0b100;
 
     flags!(update_animations, set_update_animations, clear_update_animations, Self::UPDATE_ANIMATIONS);
     flags!(update_terrain, set_update_terrain, clear_update_terrain, Self::UPDATE_TERRAIN);
+    flags!(update_gui, set_update_gui, clear_update_gui, Self::UPDATE_GUI);
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]

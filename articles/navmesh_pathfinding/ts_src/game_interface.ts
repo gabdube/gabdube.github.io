@@ -5,6 +5,12 @@ import { GameClient, GameClientInit } from "../build/navmesh_pathfinding_demo";
 
 const GAME_SRC_PATH = "/articles/navmesh_pathfinding/navmesh_pathfinding_demo.js";
 
+export interface GameStartParams {
+    max_texture_size: number,
+    screen_width: number,
+    screen_height: number,
+}
+
 export class GameUpdates {
     protocol: any;
     buffer: ArrayBuffer;
@@ -60,13 +66,22 @@ export class GameInterface {
         return true;
     }
 
-    start(assets: EngineAssets): boolean {
+    start(assets: EngineAssets, params: GameStartParams): boolean {
         const mod = this.module;
 
         const initial_data: GameClientInit = mod.GameClientInit.new();
+
+        // Config
+        initial_data.max_texture_size(params.max_texture_size);
+        initial_data.screen_size(params.screen_width, params.screen_height);
+        
+        // Assets
         initial_data.set_assets_bundle(assets.bundle);
         for (const [csv_name, csv_value] of assets.csv.entries()) {
             initial_data.upload_text_asset(csv_name, csv_value);
+        }
+        for (const [font_name, font_value] of assets.fonts.entries()) {
+            initial_data.upload_bin_asset(font_name, new Uint8Array(font_value));
         } 
 
         this.instance = mod.GameClient.initialize(initial_data);
@@ -100,6 +115,10 @@ export class GameInterface {
         const buffer = this.get_memory();
         const output_index_ptr = this.instance.updates_ptr();
         return new GameUpdates(this.protocol, buffer, output_index_ptr);
+    }
+
+    resize(width: number, height: number) {
+        this.instance.resize(width, height);
     }
 
     private get_memory(): ArrayBuffer {

@@ -6,6 +6,11 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+
+default = ["gui"]
+gui = ["egui"]
+
 [dependencies]
 
 # WASM tooling
@@ -18,3 +23,7 @@ hecs = "0.10.5"
 
 # Std hashmap replacement
 fnv = "1.0.7"
+
+# Egui
+# Egui increase the binary size by 10x & compile time by 5x, so we can turn it off for quicker testing
+egui = { version = "0.31.1", default-features = false, features = [], optional = true }

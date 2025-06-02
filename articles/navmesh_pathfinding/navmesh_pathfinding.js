@@ -41,6 +41,18 @@ async function fetch_blob(url) {
     }
     return response.blob();
 }
+async function fetch_arraybuffer(url) {
+    let response = await fetch(url)
+        .catch((_) => { set_last_error(`Failed to fetch ${url}`); return null; });
+    if (!response) {
+        return null;
+    }
+    if (!response.ok) {
+        set_last_error(`Failed to fetch ${url}`);
+        return null;
+    }
+    return response.arrayBuffer();
+}
 
 /// Interface between the wasm client and the engine
 const GAME_SRC_PATH = "/articles/navmesh_pathfinding/navmesh_pathfinding_demo.js";
@@ -82,12 +94,19 @@ class GameInterface {
         this.protocol = await import(moduleUrl);
         return true;
     }
-    start(assets) {
+    start(assets, params) {
         const mod = this.module;
         const initial_data = mod.GameClientInit.new();
+        // Config
+        initial_data.max_texture_size(params.max_texture_size);
+        initial_data.screen_size(params.screen_width, params.screen_height);
+        // Assets
         initial_data.set_assets_bundle(assets.bundle);
         for (const [csv_name, csv_value] of assets.csv.entries()) {
             initial_data.upload_text_asset(csv_name, csv_value);
+        }
+        for (const [font_name, font_value] of assets.fonts.entries()) {
+            initial_data.upload_bin_asset(font_name, new Uint8Array(font_value));
         }
         this.instance = mod.GameClient.initialize(initial_data);
         if (!this.instance) {
@@ -115,6 +134,9 @@ class GameInterface {
         const output_index_ptr = this.instance.updates_ptr();
         return new GameUpdates(this.protocol, buffer, output_index_ptr);
     }
+    resize(width, height) {
+        this.instance.resize(width, height);
+    }
     get_memory() {
         if (this.module) {
             // If the module was already initialized, this only returns the wasm memory
@@ -133,6 +155,8 @@ CSV;atlas_sprites;assets/atlas.csv;
 SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
+SHADER;gui;assets/gui.vert.glsl;assets/gui.frag.glsl;
+FONT;firacode;/FiraCode-Regular.ttf
 `;
 class Shader {
     constructor(vertex, fragment) {
@@ -152,6 +176,7 @@ class EngineAssets {
         this.bundle = ASSETS_BUNDLE;
         this.shaders = new Map();
         this.csv = new Map();
+        this.fonts = new Map();
         this.textures = new Map();
         this.textures_by_id = [];
     }
@@ -194,6 +219,12 @@ class EngineAssets {
                     const vertex_path = args[2];
                     const fragment_path = args[3];
                     asset_loading_promises.push(this.load_shader(name, vertex_path, fragment_path));
+                    break;
+                }
+                case "FONT": {
+                    const name = args[1];
+                    const path = args[2];
+                    asset_loading_promises.push(this.load_font(name, path));
                     break;
                 }
                 default: {
@@ -241,11 +272,20 @@ class EngineAssets {
         this.shaders.set(name, new Shader(vertex_text, fragment_text));
         return true;
     }
+    async load_font(name, path) {
+        const data = await fetch_arraybuffer(path);
+        if (!data) {
+            return false;
+        }
+        this.fonts.set(name, data);
+        return true;
+    }
 }
 
 const BASE_SPRITES_CAPACITY = 1024 * 2;
 const BASE_TERRAIN_CAPACITY = 1024 * 10;
 const BASE_DEBUG_CAPACITY = 1024;
+const BASE_GUI_CAPACITY = 1024 * 2;
 class RendererCanvas {
     constructor(container, element) {
         this.container = container;
@@ -258,18 +298,22 @@ class SpritesBuffer {
     constructor() {
         this.draw_count = 0;
         this.draw = [];
-    }
-}
-class SpritesDraw {
-    constructor() {
-        this.instance_count = 0;
-        this.vao = null;
-        this.texture = null;
+        this.vao_pool_next = 0;
+        this.vao_pool = [];
     }
 }
 class Terrain {
 }
 class Debug {
+}
+class Gui {
+    constructor() {
+        this.textures = new Map();
+        this.vao_pool_next = 0;
+        this.vao_pool = [];
+        this.meshes_next = 0;
+        this.meshes = [];
+    }
 }
 class RendererShaders {
 }
@@ -281,8 +325,7 @@ class Renderer {
         this.sprites = new SpritesBuffer();
         this.terrain = new Terrain();
         this.debug = new Debug();
-        this.vao_pool_next = 0;
-        this.vao_pool = [];
+        this.gui = new Gui();
     }
     init() {
         if (!this.setup_canvas()) {
@@ -305,13 +348,16 @@ class Renderer {
         if (!this.preload_textures()) {
             return false;
         }
-        this.setup_pools();
         this.setup_terrain();
         this.setup_sprites();
         this.setup_debug();
+        this.setup_gui();
         this.setup_uniforms();
         this.visible = true;
         return true;
+    }
+    max_texture_size() {
+        return this.ctx.getParameter(this.ctx.MAX_TEXTURE_SIZE);
     }
     //
     // Resize
@@ -347,6 +393,7 @@ class Renderer {
             [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
             [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
             [this.shaders.debug, this.shaders.debug_uniforms[1]],
+            [this.shaders.gui, this.shaders.gui_uniforms[0]],
         ];
         for (let [shader, uniform] of size_uniforms) {
             ctx.useProgram(shader);
@@ -363,23 +410,6 @@ class Renderer {
     //
     // Updates
     //
-    next_vao() {
-        const vao_index = this.vao_pool_next;
-        if (vao_index >= this.vao_pool.length) {
-            this.vao_pool.push(this.ctx.createVertexArray());
-        }
-        this.vao_pool_next += 1;
-        return this.vao_pool[vao_index];
-    }
-    next_sprite_draw() {
-        const sprites = this.sprites;
-        const draw_index = sprites.draw_count;
-        if (draw_index >= sprites.draw.length) {
-            sprites.draw.push(new SpritesDraw());
-        }
-        sprites.draw_count += 1;
-        return sprites.draw[draw_index];
-    }
     realloc_sprites(min_size) {
         const ctx = this.ctx;
         const old_buffer = this.sprites.attributes;
@@ -400,10 +430,9 @@ class Renderer {
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
         ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
     }
-    build_sprite_vao(instance_base) {
+    build_sprite_vao(vao, instance_base) {
         const GPU_SPRITE_SIZE = 36;
         const ctx = this.ctx;
-        const vao = this.next_vao();
         const [position, instance_position, instance_texcoord, instance_data] = this.shaders.sprites_attributes;
         const attributes_offset = instance_base * GPU_SPRITE_SIZE;
         ctx.bindVertexArray(vao);
@@ -427,57 +456,62 @@ class Renderer {
         return vao;
     }
     draw_sprites(message) {
+        function next_vao(ctx, sprites) {
+            const vao_index = sprites.vao_pool_next;
+            if (vao_index >= sprites.vao_pool.length) {
+                sprites.vao_pool.push(ctx.createVertexArray());
+            }
+            sprites.vao_pool_next += 1;
+            return sprites.vao_pool[vao_index];
+        }
+        function next_sprite_draw(sprites) {
+            const draw_index = sprites.draw_count;
+            if (draw_index >= sprites.draw.length) {
+                sprites.draw.push({ instance_count: 0, texture: null, vao: null });
+            }
+            sprites.draw_count += 1;
+            return sprites.draw[draw_index];
+        }
         const instance_base = message.instance_base();
         const instance_count = message.instance_count();
         const texture_id = message.texture_id();
-        const draw = this.next_sprite_draw();
+        const draw = next_sprite_draw(this.sprites);
         draw.instance_count = instance_count;
         draw.texture = this.textures[texture_id];
-        draw.vao = this.build_sprite_vao(instance_base);
-    }
-    realloc_terrain(min_size) {
-        const ctx = this.ctx;
-        const old_buffer = this.terrain.attributes;
-        this.terrain.attributes = ctx.createBuffer();
-        this.terrain.attributes_capacity_bytes = min_size + BASE_TERRAIN_CAPACITY;
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
-        ctx.bufferData(ctx.ARRAY_BUFFER, this.terrain.attributes_capacity_bytes, ctx.STATIC_DRAW);
-        ctx.deleteBuffer(old_buffer);
+        draw.vao = next_vao(this.ctx, this.sprites);
+        this.build_sprite_vao(draw.vao, instance_base);
     }
     update_terrain(updates, message) {
+        function realloc_terrain(ctx, terrain, min_size) {
+            const new_capacity = min_size + BASE_TERRAIN_CAPACITY;
+            terrain.attributes = realloc_buffer(ctx, terrain.attributes, ctx.ARRAY_BUFFER, terrain.attributes_capacity_bytes, new_capacity, false);
+            terrain.attributes_capacity_bytes = new_capacity;
+        }
         const ctx = this.ctx;
         const offset = message.offset_bytes();
         const size = message.size_bytes();
         this.terrain.instance_count = message.cell_count();
         ctx.bindVertexArray(this.terrain.vao);
         if (size > this.terrain.attributes_capacity_bytes) {
-            this.realloc_terrain(size);
+            realloc_terrain(ctx, this.terrain, size);
             this.setup_terrain_vao();
         }
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
         ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
     }
-    realloc_debug(index_size, vertex_size) {
-        const ctx = this.ctx;
-        const debug = this.debug;
-        if (debug.index_capacity < index_size) {
-            const old = debug.index;
-            debug.index = ctx.createBuffer();
-            debug.index_capacity = index_size + BASE_DEBUG_CAPACITY;
-            ctx.bindBuffer(ctx.ARRAY_BUFFER, debug.index);
-            ctx.bufferData(ctx.ARRAY_BUFFER, debug.index_capacity, ctx.DYNAMIC_DRAW);
-            ctx.deleteBuffer(old);
-        }
-        if (debug.vertex_capacity < vertex_size) {
-            const old = debug.vertex;
-            debug.vertex = ctx.createBuffer();
-            debug.vertex_capacity = vertex_size + BASE_DEBUG_CAPACITY;
-            ctx.bindBuffer(ctx.ARRAY_BUFFER, debug.vertex);
-            ctx.bufferData(ctx.ARRAY_BUFFER, debug.vertex_capacity, ctx.DYNAMIC_DRAW);
-            ctx.deleteBuffer(old);
-        }
-    }
     draw_debug(updates, message) {
+        function realloc_debug(ctx, debug, index_size, vertex_size) {
+            if (debug.index_capacity < index_size) {
+                const new_capacity = index_size + (BASE_DEBUG_CAPACITY * 1.5 | 0);
+                debug.index = realloc_buffer(ctx, debug.index, ctx.ELEMENT_ARRAY_BUFFER, debug.index_capacity, new_capacity, false);
+                debug.index_capacity = new_capacity;
+            }
+            if (debug.vertex_capacity < vertex_size) {
+                const new_capacity = vertex_size + BASE_DEBUG_CAPACITY;
+                debug.vertex = realloc_buffer(ctx, debug.vertex, ctx.ARRAY_BUFFER, debug.vertex_capacity, new_capacity, false);
+                debug.vertex_capacity = new_capacity;
+            }
+        }
         const ctx = this.ctx;
         const debug = this.debug;
         const index_offset = message.index_offset_bytes();
@@ -487,7 +521,7 @@ class Renderer {
         debug.count = message.count();
         ctx.bindVertexArray(this.debug.vao);
         if (debug.index_capacity < index_size || debug.vertex_capacity < vertex_size) {
-            this.realloc_debug(index_size, vertex_size);
+            realloc_debug(this.ctx, this.debug, index_size, vertex_size);
             this.setup_debug_vao();
         }
         ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.debug.index);
@@ -495,11 +529,107 @@ class Renderer {
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.debug.vertex);
         ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(vertex_offset, vertex_size));
     }
+    reset_gui() {
+        const gui = this.gui;
+        gui.vao_pool_next = 0;
+        gui.meshes_next = 0;
+        gui.index_offset = 0;
+        gui.vertex_offset = 0;
+    }
+    update_gui_textures(updates, message) {
+        const ctx = this.ctx;
+        const pixels_offset = message.pixels_offset();
+        const pixels_size = message.pixels_size();
+        const x = message.x();
+        const y = message.y();
+        const width = message.width();
+        const height = message.height();
+        const id = message.id();
+        const gui = this.gui;
+        const texture = gui.textures.get(id);
+        const pixels_data = updates.get_data(pixels_offset, pixels_size);
+        if (!texture) {
+            gui.textures.set(id, create_texture_rgba_from_bytes(ctx, width, height, pixels_data));
+        }
+        else {
+            ctx.bindTexture(ctx.TEXTURE_2D, texture);
+            ctx.texSubImage2D(ctx.TEXTURE_2D, 0, x, y, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, new Uint8Array(pixels_data));
+        }
+    }
+    update_gui_mesh(updates, message) {
+        function next_vao(ctx, gui) {
+            const vao_index = gui.vao_pool_next;
+            if (vao_index >= gui.vao_pool.length) {
+                gui.vao_pool.push(ctx.createVertexArray());
+            }
+            gui.vao_pool_next += 1;
+            return gui.vao_pool[vao_index];
+        }
+        function upload_data(ctx, gui, index, vertex) {
+            if (gui.index_offset + index.byteLength > gui.index_capacity) {
+                const new_capacity = (gui.index_offset + index.byteLength) + ((BASE_GUI_CAPACITY * 1.5) | 0);
+                gui.index = realloc_buffer(ctx, gui.index, ctx.ELEMENT_ARRAY_BUFFER, gui.index_capacity, new_capacity, true);
+                gui.index_capacity = new_capacity;
+            }
+            if (gui.vertex_offset + vertex.byteLength > gui.vertex_capacity) {
+                const new_capacity = (gui.vertex_offset + vertex.byteLength) + BASE_GUI_CAPACITY;
+                gui.vertex = realloc_buffer(ctx, gui.vertex, ctx.ARRAY_BUFFER, gui.vertex_capacity, new_capacity, true);
+                gui.vertex_capacity = new_capacity;
+            }
+            ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, gui.index);
+            ctx.bufferSubData(ctx.ELEMENT_ARRAY_BUFFER, gui.index_offset, index);
+            ctx.bindBuffer(ctx.ARRAY_BUFFER, gui.vertex);
+            ctx.bufferSubData(ctx.ARRAY_BUFFER, gui.vertex_offset, vertex);
+            gui.index_offset += index.byteLength;
+            gui.vertex_offset += vertex.byteLength;
+        }
+        function build_vao(ctx, gui, shaders, vao, vertex_offset) {
+            const VERTEX_SIZE = 20;
+            ctx.bindVertexArray(vao);
+            ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, gui.index);
+            // Vertex data
+            let [position, texcoord, color] = shaders.gui_attributes;
+            ctx.bindBuffer(ctx.ARRAY_BUFFER, gui.vertex);
+            ctx.enableVertexAttribArray(position);
+            ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, VERTEX_SIZE, vertex_offset);
+            ctx.enableVertexAttribArray(texcoord);
+            ctx.vertexAttribPointer(texcoord, 2, ctx.FLOAT, false, VERTEX_SIZE, vertex_offset + 8);
+            ctx.enableVertexAttribArray(color);
+            ctx.vertexAttribPointer(color, 4, ctx.UNSIGNED_BYTE, true, VERTEX_SIZE, vertex_offset + 16);
+            ctx.bindVertexArray(null);
+        }
+        function next_mesh(gui) {
+            const index = gui.meshes_next;
+            if (index >= gui.meshes.length) {
+                gui.meshes[index] = {};
+            }
+            gui.meshes_next += 1;
+            return gui.meshes[index];
+        }
+        const ctx = this.ctx;
+        const gui = this.gui;
+        const [x1, y1, x2, y2] = message.clip();
+        const canvas_height = this.canvas.height;
+        const index_data = updates.get_data(message.index_offset_bytes(), message.index_size_bytes());
+        const vertex_data = updates.get_data(message.vertex_offset_bytes(), message.vertex_size_bytes());
+        const texture = gui.textures.get(message.texture_id());
+        const vertex_offset = gui.vertex_offset;
+        const index_offset = gui.index_offset;
+        const vao = next_vao(ctx, gui);
+        const mesh = next_mesh(gui);
+        upload_data(ctx, gui, index_data, vertex_data);
+        build_vao(ctx, gui, this.shaders, vao, vertex_offset);
+        mesh.clip = [x1, canvas_height - y2, x2 - x1, canvas_height - y1];
+        mesh.texture = texture;
+        mesh.vao = vao;
+        mesh.count = message.count();
+        mesh.offset = index_offset;
+    }
     prepare_updates() {
         this.ctx.bindVertexArray(null);
         this.sprites.draw_count = 0;
+        this.sprites.vao_pool_next = 0;
         this.debug.count = 0;
-        this.vao_pool_next = 0;
     }
     update(game) {
         this.prepare_updates();
@@ -523,6 +653,18 @@ class Renderer {
                 }
                 case "DrawDebug": {
                     this.draw_debug(updates, message.draw_debug());
+                    break;
+                }
+                case "ResetGui": {
+                    this.reset_gui();
+                    break;
+                }
+                case "GuiTextureUpdate": {
+                    this.update_gui_textures(updates, message.gui_texture_update());
+                    break;
+                }
+                case "GuiMeshUpdate": {
+                    this.update_gui_mesh(updates, message.gui_mesh_update());
                     break;
                 }
                 default: {
@@ -565,6 +707,22 @@ class Renderer {
             ctx.drawElementsInstanced(ctx.TRIANGLES, debug.count, ctx.UNSIGNED_SHORT, 0, 1);
         }
     }
+    render_gui() {
+        const ctx = this.ctx;
+        const gui = this.gui;
+        if (gui.meshes.length > 0) {
+            ctx.enable(ctx.SCISSOR_TEST);
+            ctx.useProgram(this.shaders.gui);
+            for (let mesh of gui.meshes) {
+                let [x, y, width, height] = mesh.clip;
+                ctx.scissor(x, y, width, height);
+                ctx.bindTexture(ctx.TEXTURE_2D, mesh.texture);
+                ctx.bindVertexArray(mesh.vao);
+                ctx.drawElementsInstanced(ctx.TRIANGLES, mesh.count, ctx.UNSIGNED_INT, mesh.offset, 1);
+            }
+            ctx.disable(ctx.SCISSOR_TEST);
+        }
+    }
     render() {
         const ctx = this.ctx;
         const canvas = this.canvas;
@@ -573,6 +731,7 @@ class Renderer {
         this.render_terrain();
         this.render_sprites();
         this.render_debug();
+        this.render_gui();
         ctx.bindFramebuffer(ctx.READ_FRAMEBUFFER, this.framebuffer);
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, null);
         ctx.blitFramebuffer(0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height, ctx.COLOR_BUFFER_BIT, ctx.LINEAR);
@@ -693,6 +852,15 @@ class Renderer {
         else {
             return false;
         }
+        const gui = build_shader(ctx, assets, "gui", ["in_positions", "in_texcoord", "in_color"], ["view_size"]);
+        if (gui) {
+            shaders.gui = gui.program;
+            shaders.gui_attributes = gui.attributes;
+            shaders.gui_uniforms = gui.uniforms;
+        }
+        else {
+            return false;
+        }
         return true;
     }
     preload_textures() {
@@ -707,14 +875,8 @@ class Renderer {
         }
         return true;
     }
-    setup_pools() {
-        const ctx = this.ctx;
-        for (let i = 0; i < 8; i += 1) {
-            this.vao_pool.push(ctx.createVertexArray());
-            this.sprites.draw.push(new SpritesDraw());
-        }
-    }
     setup_terrain_vao() {
+        const TERRAIN_VERTEX_SIZE = 8;
         const TERRAIN_SPRITE_SIZE = 16;
         const ctx = this.ctx;
         const [position, instance_position, instance_texcoord] = this.shaders.terrain_attributes;
@@ -723,7 +885,7 @@ class Renderer {
         ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.terrain.index);
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.vertex);
         ctx.enableVertexAttribArray(position);
-        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, 8, 0);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, TERRAIN_VERTEX_SIZE, 0);
         // Instance Data
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
         ctx.enableVertexAttribArray(instance_position);
@@ -743,7 +905,7 @@ class Renderer {
         terrain.attributes_capacity_bytes = BASE_TERRAIN_CAPACITY;
         terrain.attributes_size_bytes = 0;
         terrain.instance_count = 0;
-        terrain.vao = this.vao_pool.pop();
+        terrain.vao = ctx.createVertexArray();
         const texture_id = this.assets.textures.get("terrain")?.id; // Check is handled in preload_textures
         terrain.texture = this.textures[texture_id];
         ctx.bindVertexArray(terrain.vao);
@@ -779,6 +941,9 @@ class Renderer {
         ]), ctx.STATIC_DRAW);
         ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.attributes);
         ctx.bufferData(ctx.ARRAY_BUFFER, sprites.attributes_capacity_bytes, ctx.DYNAMIC_DRAW);
+        for (let i = 0; i < 4; i += 1) {
+            this.sprites.vao_pool.push(ctx.createVertexArray());
+        }
     }
     setup_debug_vao() {
         const DEBUG_VERTEX_SIZE = 12;
@@ -797,19 +962,36 @@ class Renderer {
         const ctx = this.ctx;
         const debug = this.debug;
         debug.index = ctx.createBuffer();
-        debug.index_capacity = BASE_DEBUG_CAPACITY;
+        debug.index_capacity = (BASE_DEBUG_CAPACITY * 1.5) | 0;
         debug.vertex = ctx.createBuffer();
-        debug.vertex_capacity = (BASE_DEBUG_CAPACITY * 1.5) | 0;
-        debug.vao = this.vao_pool.pop();
+        debug.vertex_capacity = BASE_DEBUG_CAPACITY;
+        debug.vao = ctx.createVertexArray();
         // Vertex
         ctx.bindVertexArray(debug.vao);
         ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, debug.index);
         ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, debug.index_capacity, ctx.DYNAMIC_DRAW);
         ctx.bindBuffer(ctx.ARRAY_BUFFER, debug.vertex);
         ctx.bufferData(ctx.ARRAY_BUFFER, debug.vertex_capacity, ctx.DYNAMIC_DRAW);
-        console.log(debug);
         // Vao
         this.setup_debug_vao();
+    }
+    setup_gui() {
+        const ctx = this.ctx;
+        const gui = this.gui;
+        gui.index = ctx.createBuffer();
+        gui.index_offset = 0;
+        gui.index_capacity = (BASE_GUI_CAPACITY * 1.5) | 0;
+        gui.vertex = ctx.createBuffer();
+        gui.vertex_offset = 0;
+        gui.vertex_capacity = BASE_GUI_CAPACITY;
+        ctx.bindVertexArray(null);
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, gui.index);
+        ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, gui.index_capacity, ctx.DYNAMIC_DRAW);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, gui.vertex);
+        ctx.bufferData(ctx.ARRAY_BUFFER, gui.vertex_capacity, ctx.DYNAMIC_DRAW);
+        for (let i = 0; i < 4; i += 1) {
+            this.gui.vao_pool.push(ctx.createVertexArray());
+        }
     }
     setup_uniforms() {
         const ctx = this.ctx;
@@ -826,6 +1008,9 @@ class Renderer {
         [view_position, view_size] = this.shaders.debug_uniforms;
         ctx.useProgram(this.shaders.debug);
         ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
+        view_size = this.shaders.gui_uniforms[0];
+        ctx.useProgram(this.shaders.gui);
         ctx.uniform2fv(view_size, size);
     }
 }
@@ -907,6 +1092,31 @@ function create_texture_rgba(ctx, cpu_texture) {
     ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, bitmap.width, bitmap.height, ctx.RGBA, ctx.UNSIGNED_BYTE, bitmap);
     return texture;
 }
+function create_texture_rgba_from_bytes(ctx, width, height, data) {
+    const texture = ctx.createTexture();
+    ctx.bindTexture(ctx.TEXTURE_2D, texture);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.LINEAR);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.LINEAR);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S, ctx.CLAMP_TO_EDGE);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T, ctx.CLAMP_TO_EDGE);
+    ctx.texStorage2D(ctx.TEXTURE_2D, 1, ctx.RGBA8, width, height);
+    ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, new Uint8Array(data));
+    return texture;
+}
+function realloc_buffer(ctx, buffer, target, old_capacity, new_capacity, copy_data) {
+    const new_buffer = ctx.createBuffer();
+    ctx.bindBuffer(target, new_buffer);
+    ctx.bufferData(target, new_capacity, ctx.DYNAMIC_DRAW);
+    if (copy_data) {
+        ctx.bindBuffer(ctx.COPY_READ_BUFFER, buffer);
+        ctx.bindBuffer(ctx.COPY_WRITE_BUFFER, new_buffer);
+        ctx.copyBufferSubData(ctx.COPY_READ_BUFFER, ctx.COPY_WRITE_BUFFER, 0, 0, old_capacity);
+        ctx.bindBuffer(ctx.COPY_READ_BUFFER, null);
+        ctx.bindBuffer(ctx.COPY_WRITE_BUFFER, null);
+    }
+    ctx.deleteBuffer(buffer);
+    return new_buffer;
+}
 
 const WEBSOCKET_HOST = "localhost:8001";
 const VALID_MESSAGE_NAMES = ["FILE_CHANGED"];
@@ -971,12 +1181,31 @@ function on_text_message(ws, message) {
 function on_bin_message(data) {
 }
 
+const UPDATE_MOUSE_POSITION = 0b001;
+const UPDATE_MOUSE_BUTTONS = 0b010;
+const UPDATE_KEYS = 0b100;
+// Matches `MouseButton` in `game\src\inputs.rs`
+const MOUSE_BUTTON_LEFT = 0;
+const MOUSE_BUTTON_RIGHT = 1;
+const MOUSE_BUTTON_CENTER = 2;
+class GameInput {
+    constructor() {
+        this.updates = 0;
+        this.mouse_position = [0.0, 0.0];
+        // true: button was pressed, false: button was released, null: button state wasn't changed
+        this.left_mouse_button = null;
+        this.right_mouse_button = null;
+        this.center_mouse_button = null;
+        this.keys = new Map();
+    }
+}
 class Engine {
     constructor() {
         this.ws = new EngineWebSocket();
         this.game = new GameInterface();
         this.assets = new EngineAssets();
         this.renderer = new Renderer();
+        this.input = new GameInput();
         this.reload_client = false;
         this.reload = false;
         this.exit = false;
@@ -985,6 +1214,55 @@ class Engine {
 //
 // Init
 //
+function init_handlers(engine) {
+    const canvas = engine.renderer.canvas.element;
+    const input_state = engine.input;
+    canvas.addEventListener("mousemove", (event) => {
+        input_state.mouse_position[0] = event.clientX - canvas.offsetLeft;
+        input_state.mouse_position[1] = event.clientY - canvas.offsetTop;
+        input_state.updates |= UPDATE_MOUSE_POSITION;
+    });
+    canvas.addEventListener("mousedown", (event) => {
+        input_state.mouse_position[0] = event.clientX;
+        input_state.mouse_position[1] = event.clientY;
+        input_state.updates |= UPDATE_MOUSE_BUTTONS;
+        if (event.button === 0) {
+            input_state.left_mouse_button = true;
+        }
+        else if (event.button === 1) {
+            input_state.center_mouse_button = true;
+        }
+        else if (event.button === 2) {
+            input_state.right_mouse_button = true;
+        }
+        event.preventDefault();
+    });
+    canvas.addEventListener("mouseup", (event) => {
+        input_state.mouse_position[0] = event.clientX;
+        input_state.mouse_position[1] = event.clientY;
+        input_state.updates |= UPDATE_MOUSE_BUTTONS;
+        if (event.button === 0) {
+            input_state.left_mouse_button = false;
+        }
+        else if (event.button === 1) {
+            input_state.center_mouse_button = false;
+        }
+        else if (event.button === 2) {
+            input_state.right_mouse_button = false;
+        }
+        event.preventDefault();
+    });
+    canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
+    window.addEventListener("keydown", (event) => {
+        input_state.keys.set(event.code, true);
+        input_state.updates |= UPDATE_KEYS;
+    });
+    window.addEventListener("keyup", (event) => {
+        // console.log(event.code);
+        input_state.keys.set(event.code, false);
+        input_state.updates |= UPDATE_KEYS;
+    });
+}
 async function init() {
     const app = new Engine();
     if (!app.renderer.init()) {
@@ -999,9 +1277,15 @@ async function init() {
     if (!app.renderer.init_default_resources(app.assets)) {
         return null;
     }
-    if (!app.game.start(app.assets)) {
+    const params = {
+        max_texture_size: app.renderer.max_texture_size(),
+        screen_width: app.renderer.canvas.width,
+        screen_height: app.renderer.canvas.height,
+    };
+    if (!app.game.start(app.assets, params)) {
         return null;
     }
+    init_handlers(app);
     app.ws.open();
     return app;
 }
@@ -1043,10 +1327,43 @@ function websocket_messages(engine) {
 }
 /// Check if the canvas size changed since the last call, and if so run the on resize logic
 function handle_resize(engine) {
-    engine.renderer.handle_resize();
+    if (engine.renderer.handle_resize()) {
+        const width = engine.renderer.canvas.width;
+        const height = engine.renderer.canvas.height;
+        engine.game.resize(width, height);
+    }
+}
+function game_input_updates(engine) {
+    const inputs = engine.input;
+    const game = engine.game.instance;
+    if ((inputs.updates & UPDATE_MOUSE_POSITION) > 0) {
+        game.update_mouse_position(inputs.mouse_position[0], inputs.mouse_position[1]);
+    }
+    if ((inputs.updates & UPDATE_MOUSE_BUTTONS) > 0) {
+        if (inputs.left_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_LEFT, inputs.left_mouse_button);
+        }
+        if (inputs.right_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_RIGHT, inputs.right_mouse_button);
+        }
+        if (inputs.center_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_CENTER, inputs.center_mouse_button);
+        }
+        inputs.left_mouse_button = null;
+        inputs.right_mouse_button = null;
+        inputs.center_mouse_button = null;
+    }
+    if ((inputs.updates & UPDATE_KEYS) > 0) {
+        for (let entry of inputs.keys.entries()) {
+            game.update_keys(entry[0], entry[1]);
+        }
+    }
+    inputs.keys.clear();
+    inputs.updates = 0;
 }
 /// Execute the game logic of the client for the current frame
 function game_updates(engine, time) {
+    game_input_updates(engine);
     engine.game.instance.update(time);
 }
 /// Reads the rendering updates generated by the game client

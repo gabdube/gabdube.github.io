@@ -80,6 +80,17 @@ fn generate_struct_with_custom_fields(
     write!(out, "\n}}\n").unwrap();
 }
 
+fn get_array_function(accessor: &str, base_offset: usize, item_size: usize, item_count: usize) -> String {
+    let mut out = String::with_capacity(32);
+    out.push_str("return [");
+    for i in 0..item_count {
+        let offset = base_offset + ((i * item_size) as usize);
+        out.push_str(&format!("this.view.{accessor}({offset}, true),"))
+    }
+    out.push_str("];");
+    out
+}
+
 pub fn compile() -> String {
     let mut source = String::with_capacity(1024);
 
@@ -98,6 +109,9 @@ pub fn compile() -> String {
             ("DrawSprites", OutputMessageType::DrawSprites),
             ("UpdateTerrain", OutputMessageType::UpdateTerrain),
             ("DrawDebug", OutputMessageType::DrawDebug),
+            ("GuiTextureUpdate", OutputMessageType::GuiTextureUpdate),
+            ("GuiMeshUpdate", OutputMessageType::GuiMeshUpdate),
+            ("ResetGui", OutputMessageType::ResetGui),
         ]
     );
 
@@ -158,6 +172,38 @@ pub fn compile() -> String {
         ],
     );
 
+    generate_struct(
+        &mut source, 
+        "GuiTextureUpdateParams", 
+        size_of::<GuiTextureUpdateParams>(),
+        &[
+            ("pixels_offset", pointer_type, offset_of!(GuiTextureUpdateParams, pixels_offset)),
+            ("pixels_size", pointer_type, offset_of!(GuiTextureUpdateParams, pixels_size)),
+            ("x", "getUint32", offset_of!(GuiTextureUpdateParams, x)),
+            ("y", "getUint32", offset_of!(GuiTextureUpdateParams, y)),
+            ("width", "getUint32", offset_of!(GuiTextureUpdateParams, width)),
+            ("height", "getUint32", offset_of!(GuiTextureUpdateParams, height)),
+            ("id", "getUint32", offset_of!(GuiTextureUpdateParams, id)),
+        ],
+    );
+
+    generate_struct_with_custom_fields(
+        &mut source, 
+        "GuiMeshUpdateParams", 
+        size_of::<GuiMeshUpdateParams>(),
+        &[
+            ("index_offset_bytes", pointer_type, offset_of!(GuiMeshUpdateParams, index_offset_bytes)),
+            ("index_size_bytes", pointer_type, offset_of!(GuiMeshUpdateParams, index_size_bytes)),
+            ("vertex_offset_bytes", pointer_type, offset_of!(GuiMeshUpdateParams, vertex_offset_bytes)),
+            ("vertex_size_bytes", pointer_type, offset_of!(GuiMeshUpdateParams, vertex_size_bytes)),
+            ("count", "getUint32", offset_of!(GuiMeshUpdateParams, count)),
+            ("texture_id", "getUint32", offset_of!(GuiMeshUpdateParams, texture_id)),
+        ],
+        &[
+            ("clip", &get_array_function("getFloat32", offset_of!(GuiMeshUpdateParams, clip), size_of::<f32>(), 4))
+        ]
+    );
+
     generate_struct_with_custom_fields(
         &mut source, 
         "OutputMessage", 
@@ -171,6 +217,8 @@ pub fn compile() -> String {
             ("draw_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("update_terrain", "return new UpdateTerrainParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("draw_debug", "return new DrawDebugParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("gui_texture_update", "return new GuiTextureUpdateParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("gui_mesh_update", "return new GuiMeshUpdateParams(this.view.buffer, this.view.byteOffset + 4);"),
         ]
     );
 
