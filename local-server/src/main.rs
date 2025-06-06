@@ -60,14 +60,14 @@ const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "
 fn load_text_file(files: &mut HashMap<String, FileType>, web_path: &str, local_path: &str) {
     match read_to_string(local_path) {
         Ok(content) => { files.insert(web_path.to_string(), FileType::Text(content)); },
-        _ => { panic!("File not found {:?}", local_path); }
+        _ => { println!("Warning: File not found {:?}", local_path); }
     }
 }
 
 fn load_bin_file(files: &mut HashMap<String, FileType>, web_path: &str, local_path: &str) {
     match read(local_path) {
         Ok(content) => { files.insert(web_path.to_string(), FileType::Bin(content)); },
-        _ => { panic!("File not found {:?}", local_path); }
+        _ => { println!("Warning: File not found {:?}", local_path); }
     }
 }
 
