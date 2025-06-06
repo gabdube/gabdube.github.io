@@ -1,4 +1,4 @@
-use zerocopy_derive::{Immutable, IntoBytes, FromBytes};
+use zerocopy_derive::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 use crate::shared::{PositionF32, AABB, pos, size, aabb};
 
 macro_rules! flags {
@@ -13,13 +13,27 @@ macro_rules! flags {
 pub struct GameFlags(pub u32);
 
 impl GameFlags {
-    pub const UPDATE_ANIMATIONS: u32 = 0b001;
-    pub const UPDATE_TERRAIN: u32 = 0b010;
-    pub const UPDATE_GUI: u32 = 0b100;
+    pub const UPDATE_ANIMATIONS: u32 = 0b0001;
+    pub const UPDATE_TERRAIN: u32 = 0b0010;
+    pub const UPDATE_GUI: u32 = 0b0100;
+    pub const UPDATE_VIEW_OFFSET: u32 = 0b1000;
 
     flags!(update_animations, set_update_animations, clear_update_animations, Self::UPDATE_ANIMATIONS);
     flags!(update_terrain, set_update_terrain, clear_update_terrain, Self::UPDATE_TERRAIN);
     flags!(update_gui, set_update_gui, clear_update_gui, Self::UPDATE_GUI);
+    flags!(update_view_offset, set_update_view_offset, clear_update_view_offset, Self::UPDATE_VIEW_OFFSET);
+}
+
+#[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
+pub struct DebugFlags(pub u32);
+
+impl DebugFlags {
+    pub const SHOW_NAVMESH: u32 = 0x1;
+    pub const SHOW_COLLISION_BOXES: u32 = 0x2;
+    pub const SHOW_HOVERED_TRIANGLE: u32 = 0x4;
+    pub const SHOW_CELL_CENTERS: u32 = 0x8;
+    pub const SHOW_PATH: u32 = 0x10;
+    pub const SHOW_BLOCKED_CELLS: u32 = 0x20;
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
@@ -42,13 +56,11 @@ pub struct BaseSprite {
 
 impl BaseSprite {
     pub fn rect(&self) -> AABB {
-        let [width, height] = self.texcoord.splat_size();
-        let pos = pos(self.position.x - width*0.5, self.position.y - height);
-        aabb(pos, self.texcoord.size())
+        aabb(self.position, self.texcoord.size())
     }
 }
 
-#[derive(Copy, Clone, FromBytes, IntoBytes, Immutable)]
+#[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
 pub struct AnimationState {
     pub x: f32,
     pub y: f32,
@@ -65,15 +77,32 @@ impl AnimationState {
 }
 
 #[derive(Copy, Clone, Default, FromBytes, IntoBytes, Immutable)]
+pub struct StaticSprite {
+    pub texcoord: AABB,
+}
+
+#[derive(Copy, Clone, Default, FromBytes, IntoBytes, Immutable)]
 pub struct AnimatedSprite {
     pub sprite_base: AABB,
     pub frame_count: u32,
 }
 
 impl AnimatedSprite {
+    pub fn sprite(&self) -> StaticSprite {
+        let [width, _] = self.sprite_base.splat_size();
+        StaticSprite {
+            texcoord: AABB { 
+                left: self.sprite_base.left,
+                top: self.sprite_base.top,
+                right: self.sprite_base.left + (width / self.frame_count as f32),
+                bottom: self.sprite_base.bottom
+            }
+        }
+    }
+
     pub fn animate(&self) -> AnimationState {
         let [mut width, height] = self.sprite_base.splat_size();
-        width /= self.frame_count as f32;
+        width /= self.frame_count as f32; 
         AnimationState { 
             x: self.sprite_base.left,
             y: self.sprite_base.top,
@@ -85,4 +114,25 @@ impl AnimatedSprite {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Default, IntoBytes, TryFromBytes, Immutable)]
+#[repr(u8)]
+pub enum ButtonState {
+    #[default]
+    Released = 0,
+    JustReleased = 1,
+    Pressed = 2,
+    JustPressed = 3,
+}
 
+impl ButtonState {
+    pub fn flip(&mut self) {
+        match self {
+            Self::JustPressed => { *self = Self::Pressed; }
+            Self::JustReleased => { *self = Self::Released; }
+            _ => {}
+        }
+    }
+
+    pub fn released(self) -> bool { self == Self::JustReleased || self == Self::Released }
+    pub fn just_pressed(self) -> bool { self == Self::JustPressed }
+}

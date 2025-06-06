@@ -26,3 +26,10 @@ pub struct GpuDebugVertex {
     pub position: [f32; 2],
     pub color: [u8; 4]
 }
+
+#[repr(C)]
+#[derive(Default, Copy, Clone, Immutable, IntoBytes)]
+pub struct InsertSpriteVertex {
+    pub position: [f32; 2],
+    pub texcoord: [f32; 2]
+}

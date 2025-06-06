@@ -47,8 +47,6 @@ impl DebugState {
         ]
     }
 
-    
-
     /// Generate the debug mesh. index_slice and vertex_slice must be large enough to contain the sizes returned by `buffers_sizes`
     /// Safety: `index_slice`` and `vertex_slice` must be aligned to 4 bytes
     pub fn generate_mesh(&self, index_slice: &mut [u8], vertex_slice: &mut [u8]) {

@@ -9,6 +9,7 @@ SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
 SHADER;gui;assets/gui.vert.glsl;assets/gui.frag.glsl;
+SHADER;insert_sprite;assets/insert_sprite.vert.glsl;assets/insert_sprite.frag.glsl;
 FONT;firacode;/FiraCode-Regular.ttf
 `;
 

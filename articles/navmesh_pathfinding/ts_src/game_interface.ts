@@ -35,8 +35,8 @@ export class GameUpdates {
         return new this.protocol.OutputMessage(this.buffer, offset);
     }
 
-    get_data(offset: number, size: number) {
-        return this.buffer.slice(this.base_data_ptr + offset, this.base_data_ptr + offset + size);
+    get_data(offset: number, size: number): Uint8Array {
+        return new Uint8Array(this.buffer, this.base_data_ptr+offset, size);
     }
 }
 
@@ -73,7 +73,7 @@ export class GameInterface {
 
         // Config
         initial_data.max_texture_size(params.max_texture_size);
-        initial_data.screen_size(params.screen_width, params.screen_height);
+        initial_data.view_size(params.screen_width, params.screen_height);
         
         // Assets
         initial_data.set_assets_bundle(assets.bundle);

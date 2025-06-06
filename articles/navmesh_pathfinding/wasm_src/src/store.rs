@@ -10,19 +10,6 @@ pub trait StoreLoad: Sized {
     fn load(reader: &mut StoreReader) -> Result<Self, Error>;
 }
 
-// Blanket implementation for all the types using zerocopy
-impl<T> StoreLoad for T 
-    where T: IntoBytes+TryFromBytes+Immutable
-{
-    fn store(&mut self, writer: &mut StoreWriter) {
-        writer.write(self);
-    }
-
-    fn load(reader: &mut StoreReader) -> Result<Self, Error> {
-        reader.try_read()
-    }
-}
-
 pub struct StoreWriter {
     pub data: Vec<u8>,
     pub data_offset: usize,
@@ -51,6 +38,19 @@ impl StoreWriter {
 
         value.write_to_prefix(self.remaining_bytes()).unwrap();
         self.data_offset += size;
+    }
+
+    pub fn write_option<T: IntoBytes+Immutable>(&mut self, op_value: &Option<T>) {
+        let total_size = size_of::<T>() + U32_SIZE;
+        if self.must_realloc(total_size) {
+            self.realloc(total_size);
+        }
+
+        self.write_u32(op_value.is_some() as u32);
+        if let Some(value) = op_value.as_ref() {
+            value.write_to_prefix(self.remaining_bytes()).unwrap();
+            self.data_offset += size_of::<T>();
+        }
     }
 
     pub fn write_array<T: IntoBytes+Immutable>(&mut self, values: &[T]) {
@@ -165,6 +165,15 @@ impl<'a> StoreReader<'a> {
         self.data_offset += size_of::<T>();
 
         Ok(value)
+    }
+
+    pub fn try_read_option<T: TryFromBytes+Immutable>(&mut self) -> Result<Option<T>, Error> {
+        let is_some = self.read_u32();
+        if is_some > 0 {
+            self.try_read().map(Option::Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn read_array<'b, T: Copy+FromBytes+Immutable>(&mut self) -> &'b [T] {

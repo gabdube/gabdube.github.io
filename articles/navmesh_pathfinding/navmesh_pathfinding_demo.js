@@ -355,10 +355,10 @@ export class GameClientInit {
      * @param {number} width
      * @param {number} height
      */
-    screen_size(width, height) {
+    view_size(width, height) {
         if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
         _assertNum(this.__wbg_ptr);
-        wasm.gameclientinit_screen_size(this.__wbg_ptr, width, height);
+        wasm.gameclientinit_view_size(this.__wbg_ptr, width, height);
     }
 }
 

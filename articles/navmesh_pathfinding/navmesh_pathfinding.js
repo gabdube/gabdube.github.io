@@ -71,7 +71,7 @@ class GameUpdates {
         return new this.protocol.OutputMessage(this.buffer, offset);
     }
     get_data(offset, size) {
-        return this.buffer.slice(this.base_data_ptr + offset, this.base_data_ptr + offset + size);
+        return new Uint8Array(this.buffer, this.base_data_ptr + offset, size);
     }
 }
 class GameInterface {
@@ -99,7 +99,7 @@ class GameInterface {
         const initial_data = mod.GameClientInit.new();
         // Config
         initial_data.max_texture_size(params.max_texture_size);
-        initial_data.screen_size(params.screen_width, params.screen_height);
+        initial_data.view_size(params.screen_width, params.screen_height);
         // Assets
         initial_data.set_assets_bundle(assets.bundle);
         for (const [csv_name, csv_value] of assets.csv.entries()) {
@@ -156,6 +156,7 @@ SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
 SHADER;gui;assets/gui.vert.glsl;assets/gui.frag.glsl;
+SHADER;insert_sprite;assets/insert_sprite.vert.glsl;assets/insert_sprite.frag.glsl;
 FONT;firacode;/FiraCode-Regular.ttf
 `;
 class Shader {
@@ -285,7 +286,7 @@ class EngineAssets {
 const BASE_SPRITES_CAPACITY = 1024 * 2;
 const BASE_TERRAIN_CAPACITY = 1024 * 10;
 const BASE_DEBUG_CAPACITY = 1024;
-const BASE_GUI_CAPACITY = 1024 * 2;
+const BASE_GUI_CAPACITY = 1024 * 5;
 class RendererCanvas {
     constructor(container, element) {
         this.container = container;
@@ -301,6 +302,8 @@ class SpritesBuffer {
         this.vao_pool_next = 0;
         this.vao_pool = [];
     }
+}
+class OtherSpritesBuffer {
 }
 class Terrain {
 }
@@ -323,6 +326,7 @@ class Renderer {
         this.shaders = new RendererShaders();
         this.textures = [];
         this.sprites = new SpritesBuffer();
+        this.other_sprites = new OtherSpritesBuffer();
         this.terrain = new Terrain();
         this.debug = new Debug();
         this.gui = new Gui();
@@ -350,6 +354,7 @@ class Renderer {
         }
         this.setup_terrain();
         this.setup_sprites();
+        this.setup_other_sprites();
         this.setup_debug();
         this.setup_gui();
         this.setup_uniforms();
@@ -391,6 +396,7 @@ class Renderer {
         const size = new Float32Array([this.canvas.width, this.canvas.height]);
         const size_uniforms = [
             [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
+            [this.shaders.insert_sprites, this.shaders.insert_sprites_uniforms[0]],
             [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
             [this.shaders.debug, this.shaders.debug_uniforms[1]],
             [this.shaders.gui, this.shaders.gui_uniforms[0]],
@@ -410,22 +416,16 @@ class Renderer {
     //
     // Updates
     //
-    realloc_sprites(min_size) {
-        const ctx = this.ctx;
-        const old_buffer = this.sprites.attributes;
-        this.sprites.attributes = ctx.createBuffer();
-        this.sprites.attributes_capacity_bytes = min_size + BASE_SPRITES_CAPACITY;
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
-        ctx.bufferData(ctx.ARRAY_BUFFER, this.sprites.attributes_capacity_bytes, ctx.DYNAMIC_DRAW);
-        ctx.deleteBuffer(old_buffer);
-    }
     update_sprites(updates, message) {
         const ctx = this.ctx;
         const offset = message.offset_bytes();
         const size = message.size_bytes();
         ctx.bindVertexArray(null);
         if (size > this.sprites.attributes_capacity_bytes) {
-            this.realloc_sprites(size);
+            console.log("REALLOC");
+            const new_capacity = size + BASE_SPRITES_CAPACITY;
+            this.sprites.attributes = realloc_buffer(ctx, this.sprites.attributes, ctx.ARRAY_BUFFER, this.sprites.attributes_capacity_bytes, new_capacity, false);
+            this.sprites.attributes_capacity_bytes = new_capacity;
         }
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
         ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
@@ -480,6 +480,17 @@ class Renderer {
         draw.texture = this.textures[texture_id];
         draw.vao = next_vao(this.ctx, this.sprites);
         this.build_sprite_vao(draw.vao, instance_base);
+    }
+    draw_insert_sprite(updates, message) {
+        const ctx = this.ctx;
+        const offset = message.vertex_offset_bytes();
+        const size = message.vertex_size_bytes();
+        const other_sprites = this.other_sprites.insert_sprites;
+        ctx.bindVertexArray(other_sprites.vao);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, other_sprites.vertex);
+        ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
+        ctx.bindVertexArray(null);
+        other_sprites.render = true;
     }
     update_terrain(updates, message) {
         function realloc_terrain(ctx, terrain, min_size) {
@@ -567,7 +578,7 @@ class Renderer {
         }
         function upload_data(ctx, gui, index, vertex) {
             if (gui.index_offset + index.byteLength > gui.index_capacity) {
-                const new_capacity = (gui.index_offset + index.byteLength) + ((BASE_GUI_CAPACITY * 1.5) | 0);
+                const new_capacity = index.byteLength + ((BASE_GUI_CAPACITY * 1.5) | 0);
                 gui.index = realloc_buffer(ctx, gui.index, ctx.ELEMENT_ARRAY_BUFFER, gui.index_capacity, new_capacity, true);
                 gui.index_capacity = new_capacity;
             }
@@ -617,6 +628,7 @@ class Renderer {
         const index_offset = gui.index_offset;
         const vao = next_vao(ctx, gui);
         const mesh = next_mesh(gui);
+        ctx.bindVertexArray(vao);
         upload_data(ctx, gui, index_data, vertex_data);
         build_vao(ctx, gui, this.shaders, vao, vertex_offset);
         mesh.clip = [x1, canvas_height - y2, x2 - x1, canvas_height - y1];
@@ -624,6 +636,19 @@ class Renderer {
         mesh.vao = vao;
         mesh.count = message.count();
         mesh.offset = index_offset;
+    }
+    update_view_offset(message) {
+        const ctx = this.ctx;
+        const offset = new Float32Array(message);
+        const offset_uniforms = [
+            [this.shaders.sprites, this.shaders.sprites_uniforms[0]],
+            [this.shaders.terrain, this.shaders.terrain_uniforms[0]],
+            [this.shaders.debug, this.shaders.debug_uniforms[0]],
+        ];
+        for (let [shader, uniform] of offset_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, offset);
+        }
     }
     prepare_updates() {
         this.ctx.bindVertexArray(null);
@@ -647,6 +672,10 @@ class Renderer {
                     this.draw_sprites(message.draw_sprites());
                     break;
                 }
+                case "DrawInsertSprite": {
+                    this.draw_insert_sprite(updates, message.draw_insert_sprite());
+                    break;
+                }
                 case "UpdateTerrain": {
                     this.update_terrain(updates, message.update_terrain());
                     break;
@@ -665,6 +694,10 @@ class Renderer {
                 }
                 case "GuiMeshUpdate": {
                     this.update_gui_mesh(updates, message.gui_mesh_update());
+                    break;
+                }
+                case "UpdateViewOffset": {
+                    this.update_view_offset(message.update_view_offset());
                     break;
                 }
                 default: {
@@ -696,6 +729,18 @@ class Renderer {
             ctx.bindTexture(ctx.TEXTURE_2D, draw.texture);
             ctx.bindVertexArray(draw.vao);
             ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, draw.instance_count);
+        }
+    }
+    render_special_sprites() {
+        const ctx = this.ctx;
+        const insert_sprites = this.other_sprites.insert_sprites;
+        if (insert_sprites.render) {
+            ctx.useProgram(this.shaders.insert_sprites);
+            ctx.activeTexture(ctx.TEXTURE0);
+            ctx.bindTexture(ctx.TEXTURE_2D, insert_sprites.texture);
+            ctx.bindVertexArray(insert_sprites.vao);
+            ctx.drawArrays(ctx.TRIANGLES, 0, 6);
+            insert_sprites.render = false;
         }
     }
     render_debug() {
@@ -730,6 +775,7 @@ class Renderer {
         ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 1.0]);
         this.render_terrain();
         this.render_sprites();
+        this.render_special_sprites();
         this.render_debug();
         this.render_gui();
         ctx.bindFramebuffer(ctx.READ_FRAMEBUFFER, this.framebuffer);
@@ -830,6 +876,15 @@ class Renderer {
             shaders.sprites = sprites.program;
             shaders.sprites_attributes = sprites.attributes;
             shaders.sprites_uniforms = sprites.uniforms;
+        }
+        else {
+            return false;
+        }
+        const insert_sprites = build_shader(ctx, assets, "insert_sprite", ["in_positions", "in_texcoord"], ["view_size"]);
+        if (insert_sprites) {
+            shaders.insert_sprites = insert_sprites.program;
+            shaders.insert_sprites_attributes = insert_sprites.attributes;
+            shaders.insert_sprites_uniforms = insert_sprites.uniforms;
         }
         else {
             return false;
@@ -945,6 +1000,32 @@ class Renderer {
             this.sprites.vao_pool.push(ctx.createVertexArray());
         }
     }
+    setup_other_sprites() {
+        const VERTEX_SIZE = 16;
+        const ctx = this.ctx;
+        const vao = ctx.createVertexArray();
+        ctx.bindVertexArray(vao);
+        const texture_id = this.assets.textures.get("atlas")?.id;
+        const texture = this.textures[texture_id];
+        const vertex = ctx.createBuffer();
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, vertex);
+        ctx.bufferData(ctx.ARRAY_BUFFER, VERTEX_SIZE * 6, ctx.DYNAMIC_DRAW);
+        const [position, texcoord] = this.shaders.insert_sprites_attributes;
+        ctx.enableVertexAttribArray(position);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, VERTEX_SIZE, 0);
+        ctx.enableVertexAttribArray(texcoord);
+        ctx.vertexAttribPointer(texcoord, 2, ctx.FLOAT, false, VERTEX_SIZE, 8);
+        ctx.bindVertexArray(null);
+        const insert_sprites = {
+            vertex,
+            texture,
+            vao,
+            render: false,
+        };
+        this.other_sprites = {
+            insert_sprites,
+        };
+    }
     setup_debug_vao() {
         const DEBUG_VERTEX_SIZE = 12;
         const ctx = this.ctx;
@@ -962,7 +1043,7 @@ class Renderer {
         const ctx = this.ctx;
         const debug = this.debug;
         debug.index = ctx.createBuffer();
-        debug.index_capacity = (BASE_DEBUG_CAPACITY * 1.5) | 0;
+        debug.index_capacity = BASE_DEBUG_CAPACITY;
         debug.vertex = ctx.createBuffer();
         debug.vertex_capacity = BASE_DEBUG_CAPACITY;
         debug.vao = ctx.createVertexArray();
@@ -980,7 +1061,7 @@ class Renderer {
         const gui = this.gui;
         gui.index = ctx.createBuffer();
         gui.index_offset = 0;
-        gui.index_capacity = (BASE_GUI_CAPACITY * 1.5) | 0;
+        gui.index_capacity = BASE_GUI_CAPACITY;
         gui.vertex = ctx.createBuffer();
         gui.vertex_offset = 0;
         gui.vertex_capacity = BASE_GUI_CAPACITY;
@@ -1011,6 +1092,9 @@ class Renderer {
         ctx.uniform2fv(view_size, size);
         view_size = this.shaders.gui_uniforms[0];
         ctx.useProgram(this.shaders.gui);
+        ctx.uniform2fv(view_size, size);
+        view_size = this.shaders.insert_sprites_uniforms[0];
+        ctx.useProgram(this.shaders.insert_sprites);
         ctx.uniform2fv(view_size, size);
     }
 }
@@ -1223,8 +1307,6 @@ function init_handlers(engine) {
         input_state.updates |= UPDATE_MOUSE_POSITION;
     });
     canvas.addEventListener("mousedown", (event) => {
-        input_state.mouse_position[0] = event.clientX;
-        input_state.mouse_position[1] = event.clientY;
         input_state.updates |= UPDATE_MOUSE_BUTTONS;
         if (event.button === 0) {
             input_state.left_mouse_button = true;
@@ -1238,8 +1320,6 @@ function init_handlers(engine) {
         event.preventDefault();
     });
     canvas.addEventListener("mouseup", (event) => {
-        input_state.mouse_position[0] = event.clientX;
-        input_state.mouse_position[1] = event.clientY;
         input_state.updates |= UPDATE_MOUSE_BUTTONS;
         if (event.button === 0) {
             input_state.left_mouse_button = false;

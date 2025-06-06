@@ -1,2 +1,4 @@
-pawn_idle;6;0;63;378;125;
-pawn_walk;6;0;0;396;63;
+pawn_idle;6;0;271;378;333;
+pawn_walk;6;0;208;396;271;
+knight_castle;1;0;0;299;208;
+knight_house;1;299;0;410;151;

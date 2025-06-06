@@ -1,4 +1,5 @@
 use zerocopy_derive::{Immutable, IntoBytes, FromBytes};
+use std::ops::{SubAssign, Sub};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
@@ -7,7 +8,30 @@ pub struct PositionF32 {
     pub y: f32,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
+impl PositionF32 {
+    #[inline(always)]
+    pub fn splat(&self) -> [f32; 2] {
+        [self.x, self.y]
+    }
+}
+
+
+impl Sub for PositionF32 {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        PositionF32 { x: self.x - rhs.x, y: self.y - rhs.y }
+    }
+}
+
+impl SubAssign for PositionF32 {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: Self) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+    }
+}
+
+#[derive(Default, Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct SizeF32 {
     pub width: f32,
@@ -23,6 +47,10 @@ pub struct AABB {
 }
 
 impl AABB {
+    pub fn splat(&self) -> [f32; 4] {
+        [self.left, self.top, self.right, self.bottom]
+    }
+
     pub fn splat_size(&self) -> [f32; 2] {
         [self.right - self.left, self.bottom - self.top]
     }
@@ -30,6 +58,10 @@ impl AABB {
     pub fn size(&self) -> SizeF32 {
         SizeF32 { width: self.right - self.left, height: self.bottom - self.top }
     }
+
+    pub fn point_inside(&self, point: PositionF32) -> bool {
+        point.x >= self.left && point.x <= self.right && point.y >= self.top && point.y <= self.bottom
+    } 
 }
 
 //

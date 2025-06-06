@@ -54,8 +54,6 @@ function init_handlers(engine: Engine) {
     })
 
     canvas.addEventListener("mousedown", (event) => {
-        input_state.mouse_position[0] = event.clientX;
-        input_state.mouse_position[1] = event.clientY;
         input_state.updates |= UPDATE_MOUSE_BUTTONS;
 
         if (event.button === 0) { input_state.left_mouse_button = true; }
@@ -66,8 +64,6 @@ function init_handlers(engine: Engine) {
     })
 
     canvas.addEventListener("mouseup", (event) => {
-        input_state.mouse_position[0] = event.clientX;
-        input_state.mouse_position[1] = event.clientY;
         input_state.updates |= UPDATE_MOUSE_BUTTONS;
 
         if (event.button === 0) { input_state.left_mouse_button = false; }

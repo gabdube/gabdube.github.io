@@ -1,5 +1,6 @@
 use crate::GameClient;
+use super::common_inputs;
 
 pub fn update(game: &mut GameClient) {
-    super::final_demo::init(game);
+    common_inputs(game);
 }

@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::shared::AABB;
 use crate::store::StoreLoad;
 use crate::GameClientInit;
-use super::base::AnimatedSprite;
+use super::base::{AnimatedSprite, StaticSprite};
 
 #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable)]
 pub struct Texture {
@@ -17,6 +17,8 @@ pub struct AtlasData {
     pub texture: Texture,
     pub pawn_idle: AnimatedSprite,
     pub pawn_walk: AnimatedSprite,
+    pub castle: StaticSprite,
+    pub house: StaticSprite,
 }
 
 impl AtlasData {
@@ -35,6 +37,8 @@ impl AtlasData {
             match name {
                 "pawn_idle" => { self.pawn_idle = AnimatedSprite { sprite_base: AABB { left, top, right, bottom }, frame_count }; }
                 "pawn_walk" => { self.pawn_walk = AnimatedSprite { sprite_base: AABB { left, top, right, bottom }, frame_count }; }
+                "knight_castle" => { self.castle = StaticSprite { texcoord: AABB { left, top, right, bottom } }; }
+                "knight_house" => { self.house = StaticSprite { texcoord: AABB { left, top, right, bottom } }; }
                 _ => { warn!("Unknown atlas key {:?}", name) }
             }
         });
@@ -146,7 +150,7 @@ impl StoreLoad for Assets {
         let mut data = Assets::default();
         data.textures = reader.read_string_hashmap();
         data.fonts = reader.read_string_array_hashmap();
-        data.atlas = AtlasData::load(reader)?;
+        data.atlas = reader.try_read()?;
         Ok(data)
     }
 }

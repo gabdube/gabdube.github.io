@@ -112,6 +112,8 @@ pub fn compile() -> String {
             ("GuiTextureUpdate", OutputMessageType::GuiTextureUpdate),
             ("GuiMeshUpdate", OutputMessageType::GuiMeshUpdate),
             ("ResetGui", OutputMessageType::ResetGui),
+            ("UpdateViewOffset", OutputMessageType::UpdateViewOffset),
+            ("DrawInsertSprite", OutputMessageType::DrawInsertSprite),
         ]
     );
 
@@ -204,6 +206,16 @@ pub fn compile() -> String {
         ]
     );
 
+    generate_struct(
+        &mut source, 
+        "DrawInsertSpriteParams", 
+        size_of::<DrawInsertSpriteParams>(),
+        &[
+            ("vertex_offset_bytes", pointer_type, offset_of!(DrawInsertSpriteParams, vertex_offset_bytes)),
+            ("vertex_size_bytes", pointer_type, offset_of!(DrawInsertSpriteParams, vertex_size_bytes)),
+        ],
+    );
+
     generate_struct_with_custom_fields(
         &mut source, 
         "OutputMessage", 
@@ -215,10 +227,12 @@ pub fn compile() -> String {
             ("name", "return OutputMessageType[this.ty()] || this.ty();"),
             ("update_sprites", "return new UpdateSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("draw_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_insert_sprite", "return new DrawInsertSpriteParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("update_terrain", "return new UpdateTerrainParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("draw_debug", "return new DrawDebugParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("gui_texture_update", "return new GuiTextureUpdateParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("gui_mesh_update", "return new GuiMeshUpdateParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("update_view_offset", "return [this.view.getFloat32(4, true), this.view.getFloat32(8, true)];"),
         ]
     );
 

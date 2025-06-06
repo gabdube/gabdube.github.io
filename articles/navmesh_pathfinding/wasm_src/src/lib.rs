@@ -22,7 +22,7 @@ pub struct GameClientInit {
     pub(crate) text_assets: FnvHashMap<String, String>,
     pub(crate) bin_assets: FnvHashMap<String, Vec<u8>>,
     pub(crate) max_texture_size: u32,
-    pub(crate) screen_size: shared::SizeF32,
+    pub(crate) view_size: shared::SizeF32,
 }
 
 #[wasm_bindgen]
@@ -34,7 +34,7 @@ impl GameClientInit {
             text_assets: FnvHashMap::default(),
             bin_assets: FnvHashMap::default(),
             max_texture_size: 2048,
-            screen_size: shared::size(0.0, 0.0),
+            view_size: shared::size(0.0, 0.0),
         }
     }
 
@@ -54,9 +54,9 @@ impl GameClientInit {
         self.max_texture_size = u32::min(value, 4096); // We don't need more than 4096px
     }
 
-    pub fn screen_size(&mut self, width: f32, height: f32) {
-        self.screen_size.width = width;
-        self.screen_size.height = height;
+    pub fn view_size(&mut self, width: f32, height: f32) {
+        self.view_size.width = width;
+        self.view_size.height = height;
     }
 
 }
@@ -78,6 +78,8 @@ impl GameClient {
 
         let mut client = GameClient::default();
 
+        client.data.globals.view_size = init.view_size;
+
         if let Err(e) = client.data.assets.init(&init) {
             log_err!(e);
             return None;
@@ -92,14 +94,25 @@ impl GameClient {
     }
 
     pub fn update(&mut self, time: f64) {
-        self.data.prepare_update(time);
+        use state::GameStateValue::*;
 
-        match self.state {
-            state::GameState::Uninitialized => state::uninitialized::update(self),
-            state::GameState::FinalDemo => state::final_demo::update(self, time),
+        if self.hidden() {
+            return;
         }
 
-        self.data.update_gui();
+        self.data.prepare_update(time);
+
+        match self.state.value {
+            Uninitialized => state::generation::init(self),
+            Generation => state::generation::update(self),
+            Navigation => state::navigation::update(self),
+            Obstacles => state::obstacles::update(self),
+            FinalDemo => state::final_demo::update(self),
+        }
+
+        state::handle_gui_events(self);
+
+        self.data.finalize_update();
 
         output::GameOutput::update(self);
     }
@@ -109,17 +122,16 @@ impl GameClient {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        self.data.globals.view_size = shared::size(width as f32, height as f32);
         self.data.gui.resize(width, height);
     }
 
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {
         self.data.update_mouse_position(x, y);
-        self.data.gui.update_mouse_position(x, y);
     }
 
     pub fn update_mouse_buttons(&mut self, button: u8, pressed: bool) {
-        let position = self.data.globals.mouse_position;
-        self.data.gui.update_mouse_buttons(position, button, pressed);
+        self.data.update_mouse_buttons(button, pressed);
     }
 
     pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
@@ -130,7 +142,6 @@ impl GameClient {
 
 impl GameClient {
     pub fn on_reload(&mut self) {
-        state::final_demo::init(self);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {
@@ -143,13 +154,20 @@ impl GameClient {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = store::StoreReader::new(bytes)?;
 
-        let client = GameClient {
+        let mut client = GameClient {
             data: data::GameData::load(&mut reader)?,
             state: state::GameState::load(&mut reader)?,
             output: output::GameOutput::default(),
         };
 
+        client.data.gui.set_state(client.state.value, client.state.input_type);
+        client.data.gui.set_debug_flags(client.data.globals.debug_flags);
+
         Ok(client)
+    }
+
+    pub fn hidden(&mut self) -> bool {
+        self.data.globals.view_size.width == 0.0
     }
 }
 

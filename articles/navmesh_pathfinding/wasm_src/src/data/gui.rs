@@ -1,7 +1,20 @@
 #![cfg(feature="gui")]
+mod components;
+
 use crate::shared::PositionF32;
 use crate::store::StoreLoad;
+use crate::data::base::DebugFlags;
+use crate::state::{GameStateValue, GameInputType};
 use crate::GameClientInit;
+
+#[derive(Copy, Clone)]
+pub enum GuiEvent {
+    GameStateValueChanged(GameStateValue),
+    SetDebugFlags(DebugFlags),
+    SetInputType(GameInputType),
+    ResetWorld,
+    ResetPawnPosition,
+}
 
 /// Egui wrapper
 pub struct Gui {
@@ -12,6 +25,10 @@ pub struct Gui {
     pixel_per_point: f32,
     max_texture_size: u32,
     view: [f32; 4],
+    game_state: GameStateValue,
+    game_input: GameInputType,
+    debug_flags: DebugFlags,
+    events: Vec<GuiEvent>,
     force_repaint: bool,
 }
 
@@ -20,8 +37,8 @@ impl Gui {
     pub fn init(&mut self, init: &GameClientInit, assets: &crate::data::Assets) -> Result<(), crate::Error> {
         let input = &mut self.input;
 
-        let min = egui::Pos2 { x: 0.0, y: init.screen_size.height - self.height };
-        let size = egui::Vec2 { x: init.screen_size.width, y: self.height };
+        let min = egui::Pos2 { x: 0.0, y: init.view_size.height - self.height };
+        let size = egui::Vec2 { x: init.view_size.width, y: self.height };
         input.screen_rect = Some(egui::Rect::from_min_size(min, size));
 
         input.max_texture_side = Some(init.max_texture_size as usize);
@@ -43,26 +60,31 @@ impl Gui {
         self.ctx.begin_pass(input);
 
         let width = self.view[2];
-        let left_panel_width = 100.0;
+        let left_panel_width = 140.0;
 
         egui::CentralPanel::default().show(&self.ctx, |ui| {
-            egui::SidePanel::left("left_panel")
-                .resizable(false)
-                .exact_width(left_panel_width)
-                .show_inside(ui, |ui| {
-                    ui.vertical(|ui| {
-                    });
-                });
+            components::left_panel(ui, components::LeftPanelParams {
+                events: &mut self.events,
+                state: &mut self.game_state,
+                state_input: &mut self.game_input,
+                panel_width: left_panel_width,
+            });
 
-            egui::SidePanel::right("right_panel")
-                .resizable(false)
-                .exact_width(width - left_panel_width)
-                .show_separator_line(false)
-                .show_inside(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                    });
-                });
+            let params = components::PanelParams {
+                events: &mut self.events,
+                debug_flags: &mut self.debug_flags,
+                state_input: &mut self.game_input,
+            };
 
+            components::right_panel(ui, width-left_panel_width, |ui| {
+                match self.game_state {
+                    GameStateValue::Generation => components::generation_panel(ui, params),
+                    GameStateValue::Navigation => components::navigation_panel(ui, params),
+                    GameStateValue::Obstacles => components::obstacles_panel(ui, params),
+                    GameStateValue::FinalDemo => components::final_panel(ui, params),
+                    _ => {}
+                }
+            })
         });
 
         *self.output = self.ctx.end_pass();
@@ -78,9 +100,39 @@ impl Gui {
         self.force_repaint = true;
     }
 
+    pub fn set_state(&mut self, state: GameStateValue, input: GameInputType) {
+        self.game_state = state;
+        self.game_input = input;
+        self.force_repaint = true;
+    }
+
+    pub fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.debug_flags = flags;
+        self.force_repaint = true;
+    }
+
+    pub fn position_outside_gui(&self, position: PositionF32) -> bool {
+        position.y < self.view[1]
+    }
+
+    pub fn position_inside_gui(&self, position: PositionF32) -> bool {
+        position.y >= self.view[1]
+    }
+
+    pub fn events(&mut self) -> Vec<GuiEvent> {
+        let cloned;
+        if self.events.len() > 0 {
+            cloned = self.events.clone();
+        } else {
+            cloned = Vec::new();
+        }
+        self.events.clear();
+        cloned
+    }
+
     pub(super) fn update_time(&mut self, delta: f32) {
         if let Some(time) = self.input.time.as_mut() {
-            *time += (delta as f64) / 1000.0;
+            *time += (delta as f64) / 2000.0;
         }
     }
 
@@ -149,8 +201,8 @@ impl Gui {
         self.ctx.style_mut(|style| {
             style.visuals.panel_fill = Color32::from_rgb(48, 43, 40);
             style.visuals.override_text_color = Some(Color32::from_rgba_unmultiplied(224, 224, 224, 255));
-            style.text_styles.insert(TextStyle::Body, FontId::new(20.0, FontFamily::Proportional));
-            style.text_styles.insert(TextStyle::Button, FontId::new(20.0, FontFamily::Proportional));
+            style.text_styles.insert(TextStyle::Body, FontId::new(15.0, FontFamily::Proportional));
+            style.text_styles.insert(TextStyle::Button, FontId::new(15.0, FontFamily::Proportional));
         });
     }
 }
@@ -194,7 +246,11 @@ impl Default for Gui {
             pixel_per_point: 1.0,
             max_texture_size: 2048,
             view: [0.0; 4],
-            force_repaint: true
+            game_state: GameStateValue::Uninitialized,
+            game_input: GameInputType::Select,
+            debug_flags: DebugFlags::default(),
+            events: Vec::new(),
+            force_repaint: true,
         }
     }
 

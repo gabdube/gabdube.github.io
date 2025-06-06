@@ -7,16 +7,7 @@ use message::*;
 pub mod protocol;
 
 use zerocopy::{IntoBytes, Immutable};
-use crate::data::{base::BaseSprite, world::World};
 use super::GameClient;
-
-/// Temporary storage for sprites when regrouping by texture_id and y position
-/// Y component might not be equal to `sprite.position.y` in the case of "floating" objects
-#[derive(Copy, Clone)]
-pub struct TempSprite {
-    pub y: f32,
-    pub sprite: BaseSprite,
-}
 
 /// The index of all the pointers and array size to share with the engine
 /// Must be `repr(C)` because it will be directly read from memory by the engine
@@ -37,119 +28,115 @@ pub struct GameOutput {
     /// Generic data storage shared with the engine
     data: Vec<u8>,
     data_offset: usize,
-    /// Temporary buffer to order the sprites by Y order
-    order_sprites: Vec<TempSprite>
 }
 
 impl GameOutput {
 
     pub fn update(client: &mut GameClient) {
+        let mut flags = client.data.globals.flags;
+
         client.output.clear_index();
 
-        if client.data.globals.flags.update_terrain() {
+        if flags.update_view_offset() {
+            GameOutput::update_view_offset(client);
+            flags.clear_update_view_offset();
+        }
+
+        if flags.update_terrain() {
             GameOutput::update_terrain(client);
-            client.data.globals.flags.clear_update_terrain();
+            flags.clear_update_terrain();
         }
 
         if client.data.globals.total_sprites > 0 {
             GameOutput::render_sprites(client);
+            flags.clear_update_animations();
+        }
+
+        if let Some(sprite) = client.data.world.has_insert_sprite() {
+            GameOutput::render_insert_sprite(client, sprite);
         }
 
         if client.data.debug.any() {
             GameOutput::render_debug(client);
         }
 
-        if client.data.globals.flags.update_gui() {
+        if flags.update_gui() {
             GameOutput::render_gui(client);
-            client.data.globals.flags.clear_update_gui();
+            flags.clear_update_gui();
         }
 
+        client.data.globals.flags = flags;
         client.output.write_index();
     }
 
     fn render_sprites(client: &mut GameClient) {
-        fn gen_sprites(world: &mut World, buffer: &mut Vec<TempSprite>) {
-            for (_, &sprite) in world.iter_all_sprites() {
-                buffer.push(TempSprite { y: sprite.position.y, sprite })
-            }
-        }
-
-        fn gen_sprites_with_animations(world: &mut World, buffer: &mut Vec<TempSprite>) {
-            for (_, (sprite, animation)) in world.iter_animated_sprites() {
-                animation.current_frame += 1;
-                animation.current_frame = animation.current_frame * ((animation.current_frame < animation.max_frame) as u16);
-                sprite.texcoord = animation.current_frame();
-                buffer.push(TempSprite { y: sprite.position.y, sprite: *sprite })
-            }
-            
-            for (_, &sprite) in world.iter_static_sprites() {
-                buffer.push(TempSprite { y: sprite.position.y, sprite })
-            }
-        }
-
-        fn order_sprites(sprites: &mut Vec<TempSprite>) {
-            use std::cmp::Ordering;
-
-            // Sprites with a lower Y value gets rendered first
-            // y is always be a valid number, so we don't need to use `total_cmp`
-            sprites.sort_unstable_by(|v1, v2| {
-                v1.y.partial_cmp(&v2.y).unwrap_or(Ordering::Equal)
-            });
-        }
-
-        fn gen_commands(output: &mut GameOutput, texture_id: u32) {
-            let mut update_sprites = UpdateSpritesParams { offset_bytes: output.data_offset, size_bytes: 0 };
-            let mut draw_sprites = DrawSpritesParams { instance_base: 0, instance_count: 0, texture_id };
-
-            for i in 0..output.order_sprites.len() {
-                let sprite = output.order_sprites[i].sprite;
-                let [width, height] = sprite.texcoord.splat_size();
-
-                // Note: The "position" of a sprite in the display is the top-left corner
-                // however the "position" of a sprite in the game is the bottom-center, so we need to move it.
-                let gpu_sprite = GpuSpriteData {
-                    position: [
-                        sprite.position.x - (width * 0.5),   
-                        sprite.position.y - height,
-                    ],
-                    size: [width, height],
-                    texcoord_offset: [sprite.texcoord.left, sprite.texcoord.top],
-                    texcoord_size: [width, height],
-                    data: sprite.flags.value()
-                };
-
-                output.push_data(&gpu_sprite);
-
-                draw_sprites.instance_count += 1;
-                update_sprites.size_bytes += size_of::<GpuSpriteData>();
-            }
-
-            output.messages.push(OutputMessage { 
-                ty: OutputMessageType::DrawSprites,
-                params: OutputMessageParams { draw_sprites } }
-            );
-
-            output.messages.push(OutputMessage { 
-                ty: OutputMessageType::UpdateSprites,
-                params: OutputMessageParams {
-                    update_sprites
-                }
-            })
-        }
-
         // All sprites use the same texture in this tiny demo
         let flags = &mut client.data.globals.flags;
         let texture_id = client.data.assets.atlas.texture.id;
+        let output = &mut client.output;
 
-        if flags.update_animations() {
-            gen_sprites_with_animations(&mut client.data.world, &mut client.output.order_sprites);
-            flags.clear_update_animations();
-        } else {
-            gen_sprites(&mut client.data.world, &mut client.output.order_sprites);
-        }
+        client.data.world.order_sprites(flags.update_animations());
         
-        order_sprites(&mut client.output.order_sprites);
-        gen_commands(&mut client.output, texture_id);
+        let mut update_sprites = UpdateSpritesParams { offset_bytes: output.data_offset, size_bytes: 0 };
+        let mut draw_sprites = DrawSpritesParams { instance_base: 0, instance_count: 0, texture_id };
+
+        for sprite in client.data.world.ordered_sprites() {
+            let [width, height] = sprite.texcoord.splat_size();
+
+            let gpu_sprite = GpuSpriteData {
+                position: sprite.position.splat(),
+                size: [width, height],
+                texcoord_offset: [sprite.texcoord.left, sprite.texcoord.top],
+                texcoord_size: [width, height],
+                data: sprite.flags.value()
+            };
+
+            output.push_data(&gpu_sprite);
+
+            draw_sprites.instance_count += 1;
+            update_sprites.size_bytes += size_of::<GpuSpriteData>();
+        }
+
+        output.messages.push(OutputMessage { 
+            ty: OutputMessageType::UpdateSprites,
+            params: OutputMessageParams {
+                update_sprites
+            }
+        });
+
+        output.messages.push(OutputMessage { 
+            ty: OutputMessageType::DrawSprites,
+            params: OutputMessageParams { draw_sprites } }
+        );
+    }
+
+    fn render_insert_sprite(client: &mut GameClient, insert_sprite: crate::data::world::InsertSprite) {
+        let vertex_offset_bytes = client.output.data_offset;
+        let vertex_size_bytes = size_of::<InsertSpriteVertex>() * 6;
+        
+        let [tx1, ty1, tx2, ty2] = insert_sprite.sprite.splat();
+        let [width, height] = insert_sprite.sprite.splat_size();
+        let [x1, y1] = insert_sprite.position.splat();
+        let [x2, y2] = [x1 + width, y1 + height];
+
+        client.output.push_data(&[
+            InsertSpriteVertex { position: [x1, y1], texcoord: [tx1, ty1] },
+            InsertSpriteVertex { position: [x1, y2], texcoord: [tx1, ty2] },
+            InsertSpriteVertex { position: [x2, y2], texcoord: [tx2, ty2] },
+
+            InsertSpriteVertex { position: [x2, y1], texcoord: [tx2, ty1] },
+            InsertSpriteVertex { position: [x1, y1], texcoord: [tx1, ty1] },
+            InsertSpriteVertex { position: [x2, y2], texcoord: [tx2, ty2] },
+        ]);
+        
+        let params = DrawInsertSpriteParams {
+            vertex_offset_bytes,
+            vertex_size_bytes
+        };
+        client.output.messages.push(OutputMessage { 
+            ty: OutputMessageType::DrawInsertSprite,
+            params: OutputMessageParams { draw_insert_sprite: params },
+        });
     }
 
     fn update_terrain(client: &mut GameClient) {
@@ -317,10 +304,16 @@ impl GameOutput {
     #[cfg(not(feature="gui"))]
     fn render_gui(_client: &mut GameClient) {}
 
+    fn update_view_offset(client: &mut GameClient) {
+        client.output.messages.push(OutputMessage { 
+            ty: OutputMessageType::UpdateViewOffset,
+            params: OutputMessageParams { update_view_offset: client.data.globals.view_offset },
+        });
+    }
+
     fn clear_index(&mut self) {
         self.data_offset = 0;
         self.messages.clear();
-        self.order_sprites.clear();
     }
 
     fn write_index(&mut self) {
@@ -377,7 +370,6 @@ impl Default for GameOutput {
             messages: Vec::with_capacity(16),
             data: vec![0; 0xF0000],
             data_offset: 0,
-            order_sprites: Vec::with_capacity(32),
         }
     }
 
