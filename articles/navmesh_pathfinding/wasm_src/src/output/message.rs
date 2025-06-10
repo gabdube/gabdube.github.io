@@ -76,6 +76,8 @@ pub union OutputMessageParams {
     pub none: (),
     pub update_sprites: UpdateSpritesParams,
     pub draw_sprites: DrawSpritesParams,
+    pub update_highlight_sprites: UpdateSpritesParams,
+    pub highlight_sprites: DrawSpritesParams,
     pub update_terrain: UpdateTerrainParams,
     pub draw_debug: DrawDebugParams,
     pub gui_texture_update: GuiTextureUpdateParams,
@@ -89,6 +91,8 @@ pub union OutputMessageParams {
 pub enum OutputMessageType {
     UpdateSprites,
     DrawSprites,
+    UpdateHighlightSprites,
+    HighlightSprites,
     UpdateTerrain,
     DrawDebug,
     GuiTextureUpdate,

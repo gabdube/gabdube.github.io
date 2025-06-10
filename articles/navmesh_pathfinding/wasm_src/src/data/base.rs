@@ -37,20 +37,25 @@ impl DebugFlags {
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
-pub struct BaseSpriteFlags(pub u32);
+pub struct BaseSpriteFlags(pub u8);
 
 impl BaseSpriteFlags {
-    #[inline(always)]
-    pub fn empty() -> Self { BaseSpriteFlags(0) }
+    pub const FLIPPED: u8  = 0x1;
+    pub const HIGHLIGHTED: u8 = 0x2;
+
+    flags!(highlighted, set_highlighted, clear_highlighted, Self::HIGHLIGHTED);
 
     #[inline(always)]
-    pub fn value(&self) -> i32 { self.0 as i32 }
+    pub fn empty() -> Self {
+        BaseSpriteFlags(0)
+    }
 }
 
 #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable)]
 pub struct BaseSprite {
     pub position: PositionF32,
     pub texcoord: AABB,
+    pub highlight_color: [u8; 3],
     pub flags: BaseSpriteFlags,
 }
 

@@ -61,7 +61,11 @@ impl AABB {
 
     pub fn point_inside(&self, point: PositionF32) -> bool {
         point.x >= self.left && point.x <= self.right && point.y >= self.top && point.y <= self.bottom
-    } 
+    }
+
+    pub fn height(&self) -> f32 {
+        self.bottom - self.top
+    }
 }
 
 //

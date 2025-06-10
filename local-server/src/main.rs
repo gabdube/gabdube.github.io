@@ -139,8 +139,11 @@ fn watch_files(assets: &SharedAssetsCollection) {
     ::std::thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
-        let base_path = ::std::path::Path::new(".").canonicalize().unwrap();
-        let base_path_str = base_path.to_str().unwrap();
+        let base_path = ::std::path::Path::new("./articles/").canonicalize().unwrap();
+        let web_path_str = ::std::path::Path::new(".")
+            .canonicalize().unwrap()
+            .to_str().unwrap()
+            .to_string();
 
         let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
         watcher.watch(base_path.as_ref(), RecursiveMode::Recursive).unwrap();
@@ -156,7 +159,7 @@ fn watch_files(assets: &SharedAssetsCollection) {
                         .unwrap();
 
                     let web_path = local_path
-                        .replace(base_path_str, "")
+                        .replace(&web_path_str, "")
                         .replace("\\", "/");
 
                     accumulate.insert((local_path, web_path));
@@ -224,6 +227,8 @@ fn handle_websocket(assets: &SharedAssetsCollection, request: &Request) -> Optio
 
             while let Ok(path) = assets_to_reload.try_recv() {
                 let cmd = format!("{{ \"name\": \"FILE_CHANGED\", \"data\": {:?} }}", path);
+                
+                //println!("{:?}", cmd);
                 if let Err(_) = connection.send_text(&cmd) {
                     break 'outer;
                 }
@@ -272,6 +277,8 @@ fn main() {
     let assets = preload_files();
 
     watch_files(&assets);
+
+    println!("Starting server on localhost:8001");
 
     rouille::start_server("localhost:8001", move |request| {
         match request.method() {

@@ -153,6 +153,7 @@ TEXTURE;atlas;assets/atlas.png;
 TEXTURE;terrain;assets/terrain.png;
 CSV;atlas_sprites;assets/atlas.csv;
 SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
+SHADER;highlight_sprites;assets/highlight_sprites.vert.glsl;assets/highlight_sprites.frag.glsl;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
 SHADER;gui;assets/gui.vert.glsl;assets/gui.frag.glsl;
@@ -284,6 +285,7 @@ class EngineAssets {
 }
 
 const BASE_SPRITES_CAPACITY = 1024 * 2;
+const BASE_SPRITES_HIGHLIGHT_CAPACITY = 512;
 const BASE_TERRAIN_CAPACITY = 1024 * 10;
 const BASE_DEBUG_CAPACITY = 1024;
 const BASE_GUI_CAPACITY = 1024 * 5;
@@ -326,6 +328,7 @@ class Renderer {
         this.shaders = new RendererShaders();
         this.textures = [];
         this.sprites = new SpritesBuffer();
+        this.highlight_sprites = new SpritesBuffer();
         this.other_sprites = new OtherSpritesBuffer();
         this.terrain = new Terrain();
         this.debug = new Debug();
@@ -354,6 +357,7 @@ class Renderer {
         }
         this.setup_terrain();
         this.setup_sprites();
+        this.setup_highlight_sprites();
         this.setup_other_sprites();
         this.setup_debug();
         this.setup_gui();
@@ -396,6 +400,7 @@ class Renderer {
         const size = new Float32Array([this.canvas.width, this.canvas.height]);
         const size_uniforms = [
             [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
+            [this.shaders.highlight_sprites, this.shaders.highlight_sprites_uniforms[1]],
             [this.shaders.insert_sprites, this.shaders.insert_sprites_uniforms[0]],
             [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
             [this.shaders.debug, this.shaders.debug_uniforms[1]],
@@ -417,18 +422,16 @@ class Renderer {
     // Updates
     //
     update_sprites(updates, message) {
-        const ctx = this.ctx;
         const offset = message.offset_bytes();
         const size = message.size_bytes();
-        ctx.bindVertexArray(null);
-        if (size > this.sprites.attributes_capacity_bytes) {
-            console.log("REALLOC");
-            const new_capacity = size + BASE_SPRITES_CAPACITY;
-            this.sprites.attributes = realloc_buffer(ctx, this.sprites.attributes, ctx.ARRAY_BUFFER, this.sprites.attributes_capacity_bytes, new_capacity, false);
-            this.sprites.attributes_capacity_bytes = new_capacity;
-        }
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.sprites.attributes);
-        ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
+        const data = updates.get_data(offset, size);
+        copy_data_to_sprites_buffer(this.ctx, this.sprites, data, BASE_SPRITES_CAPACITY);
+    }
+    update_highlight_sprites(updates, message) {
+        const offset = message.offset_bytes();
+        const size = message.size_bytes();
+        const data = updates.get_data(offset, size);
+        copy_data_to_sprites_buffer(this.ctx, this.highlight_sprites, data, BASE_SPRITES_HIGHLIGHT_CAPACITY);
     }
     build_sprite_vao(vao, instance_base) {
         const GPU_SPRITE_SIZE = 36;
@@ -456,30 +459,49 @@ class Renderer {
         return vao;
     }
     draw_sprites(message) {
-        function next_vao(ctx, sprites) {
-            const vao_index = sprites.vao_pool_next;
-            if (vao_index >= sprites.vao_pool.length) {
-                sprites.vao_pool.push(ctx.createVertexArray());
-            }
-            sprites.vao_pool_next += 1;
-            return sprites.vao_pool[vao_index];
-        }
-        function next_sprite_draw(sprites) {
-            const draw_index = sprites.draw_count;
-            if (draw_index >= sprites.draw.length) {
-                sprites.draw.push({ instance_count: 0, texture: null, vao: null });
-            }
-            sprites.draw_count += 1;
-            return sprites.draw[draw_index];
-        }
         const instance_base = message.instance_base();
         const instance_count = message.instance_count();
         const texture_id = message.texture_id();
-        const draw = next_sprite_draw(this.sprites);
+        const draw = next_sprites_draw(this.sprites);
         draw.instance_count = instance_count;
         draw.texture = this.textures[texture_id];
-        draw.vao = next_vao(this.ctx, this.sprites);
+        draw.vao = next_sprites_vao(this.ctx, this.sprites);
         this.build_sprite_vao(draw.vao, instance_base);
+    }
+    build_highlight_sprite_vao(vao, instance_base) {
+        const GPU_SPRITE_SIZE = 36;
+        const ctx = this.ctx;
+        const [position, instance_position, instance_texcoord, highlight_color] = this.shaders.highlight_sprites_attributes;
+        const attributes_offset = instance_base * GPU_SPRITE_SIZE;
+        ctx.bindVertexArray(vao);
+        // Vertex data
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.highlight_sprites.index);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.highlight_sprites.vertex);
+        ctx.enableVertexAttribArray(position);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, 8, 0);
+        // Instance Data
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.highlight_sprites.attributes);
+        ctx.enableVertexAttribArray(instance_position);
+        ctx.vertexAttribPointer(instance_position, 4, ctx.FLOAT, false, GPU_SPRITE_SIZE, attributes_offset);
+        ctx.vertexAttribDivisor(instance_position, 1);
+        ctx.enableVertexAttribArray(instance_texcoord);
+        ctx.vertexAttribPointer(instance_texcoord, 4, ctx.FLOAT, false, GPU_SPRITE_SIZE, attributes_offset + 16);
+        ctx.vertexAttribDivisor(instance_texcoord, 1);
+        ctx.enableVertexAttribArray(highlight_color);
+        ctx.vertexAttribPointer(highlight_color, 4, ctx.UNSIGNED_BYTE, true, GPU_SPRITE_SIZE, attributes_offset + 32);
+        ctx.vertexAttribDivisor(highlight_color, 1);
+        ctx.bindVertexArray(null);
+        return vao;
+    }
+    draw_highlight_sprites(message) {
+        const instance_base = message.instance_base();
+        const instance_count = message.instance_count();
+        const texture_id = message.texture_id();
+        const draw = next_sprites_draw(this.highlight_sprites);
+        draw.instance_count = instance_count;
+        draw.texture = this.textures[texture_id];
+        draw.vao = next_sprites_vao(this.ctx, this.highlight_sprites);
+        this.build_highlight_sprite_vao(draw.vao, instance_base);
     }
     draw_insert_sprite(updates, message) {
         const ctx = this.ctx;
@@ -639,9 +661,10 @@ class Renderer {
     }
     update_view_offset(message) {
         const ctx = this.ctx;
-        const offset = new Float32Array(message);
+        const offset = new Float32Array(message); // message is the [x, y] view offset
         const offset_uniforms = [
             [this.shaders.sprites, this.shaders.sprites_uniforms[0]],
+            [this.shaders.highlight_sprites, this.shaders.highlight_sprites_uniforms[0]],
             [this.shaders.terrain, this.shaders.terrain_uniforms[0]],
             [this.shaders.debug, this.shaders.debug_uniforms[0]],
         ];
@@ -654,6 +677,8 @@ class Renderer {
         this.ctx.bindVertexArray(null);
         this.sprites.draw_count = 0;
         this.sprites.vao_pool_next = 0;
+        this.highlight_sprites.draw_count = 0;
+        this.highlight_sprites.vao_pool_next = 0;
         this.debug.count = 0;
     }
     update(game) {
@@ -670,6 +695,14 @@ class Renderer {
                 }
                 case "DrawSprites": {
                     this.draw_sprites(message.draw_sprites());
+                    break;
+                }
+                case "UpdateHighlightSprites": {
+                    this.update_highlight_sprites(updates, message.update_highlight_sprites());
+                    break;
+                }
+                case "HighlightSprites": {
+                    this.draw_highlight_sprites(message.draw_highlight_sprites());
                     break;
                 }
                 case "DrawInsertSprite": {
@@ -731,6 +764,19 @@ class Renderer {
             ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, draw.instance_count);
         }
     }
+    render_highlighted_sprites() {
+        const SPRITE_INDEX_COUNT = 6;
+        const ctx = this.ctx;
+        const sprites = this.highlight_sprites;
+        ctx.useProgram(this.shaders.highlight_sprites);
+        ctx.activeTexture(ctx.TEXTURE0);
+        for (let i = 0; i < sprites.draw_count; i += 1) {
+            const draw = sprites.draw[i];
+            ctx.bindTexture(ctx.TEXTURE_2D, draw.texture);
+            ctx.bindVertexArray(draw.vao);
+            ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, draw.instance_count);
+        }
+    }
     render_special_sprites() {
         const ctx = this.ctx;
         const insert_sprites = this.other_sprites.insert_sprites;
@@ -775,6 +821,7 @@ class Renderer {
         ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 1.0]);
         this.render_terrain();
         this.render_sprites();
+        this.render_highlighted_sprites();
         this.render_special_sprites();
         this.render_debug();
         this.render_gui();
@@ -880,6 +927,15 @@ class Renderer {
         else {
             return false;
         }
+        const highlight_sprites = build_shader(ctx, assets, "highlight_sprites", ["in_position", "in_instance_position", "in_instance_texcoord", "in_instance_highlight_color"], ["view_position", "view_size"]);
+        if (highlight_sprites) {
+            shaders.highlight_sprites = highlight_sprites.program;
+            shaders.highlight_sprites_attributes = highlight_sprites.attributes;
+            shaders.highlight_sprites_uniforms = highlight_sprites.uniforms;
+        }
+        else {
+            return false;
+        }
         const insert_sprites = build_shader(ctx, assets, "insert_sprite", ["in_positions", "in_texcoord"], ["view_size"]);
         if (insert_sprites) {
             shaders.insert_sprites = insert_sprites.program;
@@ -978,27 +1034,10 @@ class Renderer {
         this.setup_terrain_vao();
     }
     setup_sprites() {
-        const ctx = this.ctx;
-        const sprites = this.sprites;
-        sprites.index = ctx.createBuffer();
-        sprites.vertex = ctx.createBuffer();
-        sprites.attributes = ctx.createBuffer();
-        sprites.attributes_capacity_bytes = BASE_SPRITES_CAPACITY;
-        sprites.attributes_size_bytes = 0;
-        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, sprites.index);
-        ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.vertex);
-        ctx.bufferData(ctx.ARRAY_BUFFER, new Float32Array([
-            0.0, 0.0, // V0
-            1.0, 0.0, // V1
-            0.0, 1.0, // V2
-            1.0, 1.0, // V3
-        ]), ctx.STATIC_DRAW);
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.attributes);
-        ctx.bufferData(ctx.ARRAY_BUFFER, sprites.attributes_capacity_bytes, ctx.DYNAMIC_DRAW);
-        for (let i = 0; i < 4; i += 1) {
-            this.sprites.vao_pool.push(ctx.createVertexArray());
-        }
+        setup_sprites_buffer(this.ctx, this.sprites, BASE_SPRITES_CAPACITY);
+    }
+    setup_highlight_sprites() {
+        setup_sprites_buffer(this.ctx, this.highlight_sprites, BASE_SPRITES_HIGHLIGHT_CAPACITY);
     }
     setup_other_sprites() {
         const VERTEX_SIZE = 16;
@@ -1080,6 +1119,10 @@ class Renderer {
         const size = new Float32Array([this.canvas.width, this.canvas.height]);
         let [view_position, view_size] = this.shaders.sprites_uniforms;
         ctx.useProgram(this.shaders.sprites);
+        ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
+        [view_position, view_size] = this.shaders.highlight_sprites_uniforms;
+        ctx.useProgram(this.shaders.highlight_sprites);
         ctx.uniform2fv(view_position, position);
         ctx.uniform2fv(view_size, size);
         [view_position, view_size] = this.shaders.terrain_uniforms;
@@ -1200,6 +1243,55 @@ function realloc_buffer(ctx, buffer, target, old_capacity, new_capacity, copy_da
     }
     ctx.deleteBuffer(buffer);
     return new_buffer;
+}
+function setup_sprites_buffer(ctx, sprites, base_capacity) {
+    sprites.index = ctx.createBuffer();
+    sprites.vertex = ctx.createBuffer();
+    sprites.attributes = ctx.createBuffer();
+    sprites.attributes_capacity_bytes = base_capacity;
+    sprites.attributes_size_bytes = 0;
+    ctx.bindVertexArray(null);
+    ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, sprites.index);
+    ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);
+    ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.vertex);
+    ctx.bufferData(ctx.ARRAY_BUFFER, new Float32Array([
+        0.0, 0.0, // V0
+        1.0, 0.0, // V1
+        0.0, 1.0, // V2
+        1.0, 1.0, // V3
+    ]), ctx.STATIC_DRAW);
+    ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.attributes);
+    ctx.bufferData(ctx.ARRAY_BUFFER, sprites.attributes_capacity_bytes, ctx.DYNAMIC_DRAW);
+    for (let i = 0; i < 4; i += 1) {
+        sprites.vao_pool.push(ctx.createVertexArray());
+    }
+}
+function copy_data_to_sprites_buffer(ctx, sprites, data, base_capacity) {
+    const size = data.byteLength;
+    ctx.bindVertexArray(null);
+    if (size > sprites.attributes_capacity_bytes) {
+        const new_capacity = size + base_capacity;
+        sprites.attributes = realloc_buffer(ctx, sprites.attributes, ctx.ARRAY_BUFFER, sprites.attributes_capacity_bytes, new_capacity, false);
+        sprites.attributes_capacity_bytes = new_capacity;
+    }
+    ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.attributes);
+    ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, data);
+}
+function next_sprites_vao(ctx, sprites) {
+    const vao_index = sprites.vao_pool_next;
+    if (vao_index >= sprites.vao_pool.length) {
+        sprites.vao_pool.push(ctx.createVertexArray());
+    }
+    sprites.vao_pool_next += 1;
+    return sprites.vao_pool[vao_index];
+}
+function next_sprites_draw(sprites) {
+    const draw_index = sprites.draw_count;
+    if (draw_index >= sprites.draw.length) {
+        sprites.draw.push({ instance_count: 0, texture: null, vao: null });
+    }
+    sprites.draw_count += 1;
+    return sprites.draw[draw_index];
 }
 
 const WEBSOCKET_HOST = "localhost:8001";

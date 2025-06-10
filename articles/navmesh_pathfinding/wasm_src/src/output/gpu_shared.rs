@@ -33,3 +33,13 @@ pub struct InsertSpriteVertex {
     pub position: [f32; 2],
     pub texcoord: [f32; 2]
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Immutable, IntoBytes)]
+pub struct GpuHighlightedSprite {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub texcoord_offset: [f32; 2],
+    pub texcoord_size: [f32; 2],
+    pub highlight: [u8; 4],
+}

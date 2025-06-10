@@ -6,6 +6,7 @@ TEXTURE;atlas;assets/atlas.png;
 TEXTURE;terrain;assets/terrain.png;
 CSV;atlas_sprites;assets/atlas.csv;
 SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
+SHADER;highlight_sprites;assets/highlight_sprites.vert.glsl;assets/highlight_sprites.frag.glsl;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
 SHADER;gui;assets/gui.vert.glsl;assets/gui.frag.glsl;

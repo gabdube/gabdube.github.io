@@ -9,6 +9,7 @@ pub mod protocol;
 use zerocopy::{IntoBytes, Immutable};
 use super::GameClient;
 
+
 /// The index of all the pointers and array size to share with the engine
 /// Must be `repr(C)` because it will be directly read from memory by the engine
 #[repr(C)]
@@ -28,9 +29,23 @@ pub struct GameOutput {
     /// Generic data storage shared with the engine
     data: Vec<u8>,
     data_offset: usize,
+    /// Temporary storage for highlighted sprites
+    highlighted: Vec<GpuHighlightedSprite>,
 }
 
 impl GameOutput {
+
+    fn clear_index(&mut self) {
+        self.data_offset = 0;
+        self.messages.clear();
+        self.highlighted.clear()
+    }
+
+    fn write_index(&mut self) {
+        self.output_index.messages_count = self.messages.len();
+        self.output_index.messages_ptr = self.messages.as_ptr();
+        self.output_index.data_ptr = self.data.as_ptr();
+    }
 
     pub fn update(client: &mut GameClient) {
         let mut flags = client.data.globals.flags;
@@ -75,10 +90,26 @@ impl GameOutput {
         let texture_id = client.data.assets.atlas.texture.id;
         let output = &mut client.output;
 
-        client.data.world.order_sprites(flags.update_animations());
+        let instance_count = client.data.world.order_sprites(flags.update_animations());
         
-        let mut update_sprites = UpdateSpritesParams { offset_bytes: output.data_offset, size_bytes: 0 };
-        let mut draw_sprites = DrawSpritesParams { instance_base: 0, instance_count: 0, texture_id };
+        let update_sprites = UpdateSpritesParams { 
+            offset_bytes: output.data_offset,
+            size_bytes: instance_count * size_of::<GpuSpriteData>(),
+        };
+        output.messages.push(OutputMessage { 
+            ty: OutputMessageType::UpdateSprites,
+            params: OutputMessageParams { update_sprites }
+        });
+
+        let draw_sprites = DrawSpritesParams { 
+            instance_base: 0,
+            instance_count: instance_count as u32,
+            texture_id
+        };
+        output.messages.push(OutputMessage { 
+            ty: OutputMessageType::DrawSprites,
+            params: OutputMessageParams { draw_sprites } }
+        );
 
         for sprite in client.data.world.ordered_sprites() {
             let [width, height] = sprite.texcoord.splat_size();
@@ -88,26 +119,48 @@ impl GameOutput {
                 size: [width, height],
                 texcoord_offset: [sprite.texcoord.left, sprite.texcoord.top],
                 texcoord_size: [width, height],
-                data: sprite.flags.value()
+                data: sprite.flags.0 as i32
             };
-
             output.push_data(&gpu_sprite);
 
-            draw_sprites.instance_count += 1;
-            update_sprites.size_bytes += size_of::<GpuSpriteData>();
+            if sprite.flags.highlighted() {
+                let [r, g, b] = sprite.highlight_color;
+                let highlighted = GpuHighlightedSprite {
+                    position: gpu_sprite.position,
+                    size: gpu_sprite.size,
+                    texcoord_offset: gpu_sprite.texcoord_offset,
+                    texcoord_size: gpu_sprite.texcoord_size,
+                    highlight: [r, g, b, 255],
+                };
+                output.highlighted.push(highlighted);
+            }
+        }
+      
+        // Highlighted sprites
+        if output.highlighted.is_empty() {
+            return;
         }
 
+        let update_highlight_sprites = UpdateSpritesParams { 
+            offset_bytes: output.data_offset,
+            size_bytes: instance_count * size_of::<GpuHighlightedSprite>(),
+        };
         output.messages.push(OutputMessage { 
-            ty: OutputMessageType::UpdateSprites,
-            params: OutputMessageParams {
-                update_sprites
-            }
+            ty: OutputMessageType::UpdateHighlightSprites,
+            params: OutputMessageParams { update_highlight_sprites }
         });
 
+        let highlight_sprites = DrawSpritesParams { 
+            instance_base: 0,
+            instance_count: instance_count as u32,
+            texture_id
+        };
         output.messages.push(OutputMessage { 
-            ty: OutputMessageType::DrawSprites,
-            params: OutputMessageParams { draw_sprites } }
+            ty: OutputMessageType::HighlightSprites,
+            params: OutputMessageParams { highlight_sprites } }
         );
+
+        Self::push_bytes_inner(&output.highlighted, &mut output.data, &mut output.data_offset);
     }
 
     fn render_insert_sprite(client: &mut GameClient, insert_sprite: crate::data::world::InsertSprite) {
@@ -182,7 +235,7 @@ impl GameOutput {
         let [index_count, index_size, vertex_size] = client.data.debug.buffers_sizes();
         let total_size = index_size + vertex_size;
         if output.data[output.data_offset..].len() < total_size {
-            output.realloc_data(total_size);
+            Self::realloc_data(&mut output.data, total_size);
         }
 
         output.data_offset = crate::shared::align_up(output.data_offset, 4);
@@ -311,21 +364,10 @@ impl GameOutput {
         });
     }
 
-    fn clear_index(&mut self) {
-        self.data_offset = 0;
-        self.messages.clear();
-    }
-
-    fn write_index(&mut self) {
-        self.output_index.messages_count = self.messages.len();
-        self.output_index.messages_ptr = self.messages.as_ptr();
-        self.output_index.data_ptr = self.data.as_ptr();
-    }
-
     fn push_data<T: IntoBytes+Immutable>(&mut self, data: &T) {
         let size = size_of::<T>();
         if self.data[self.data_offset..].len() < size {
-            self.realloc_data(size)
+            Self::realloc_data(&mut self.data, size);
         }
 
         if let Err(_) = data.write_to_prefix(&mut self.data[self.data_offset..]) {
@@ -335,28 +377,33 @@ impl GameOutput {
         self.data_offset += size;
     }
 
-    fn push_bytes<T: Copy>(&mut self, data: &[T]) -> usize {
-        let (_, bytes, _) = unsafe { data.align_to::<u8>() };
-        let data_offset = crate::shared::align_up(self.data_offset, align_of::<T>());
+    fn push_bytes<T: Copy>(&mut self, src: &[T]) -> usize {
+        Self::push_bytes_inner(src, &mut self.data, &mut self.data_offset)
+    }
+
+    fn push_bytes_inner<T: Copy>(src: &[T], dst: &mut Vec<u8>, offset: &mut usize) -> usize {
+        let data_offset = crate::shared::align_up(*offset, align_of::<T>());
+        let (_, bytes, _) = unsafe { src.align_to::<u8>() };
 
         let size = bytes.len();
-        if self.data[data_offset..].len() < size {
-            self.realloc_data(size)
+        if dst[data_offset..].len() < size {
+            Self::realloc_data(dst, size);
         }
 
         unsafe {
-            ::std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.data[data_offset..].as_mut_ptr(), size);
+            ::std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst[data_offset..].as_mut_ptr(), size);
         }
 
-        self.data_offset = data_offset + size;
+        *offset = data_offset + size;
+
         data_offset
     }
 
     #[inline(never)]
     #[cold]
-    fn realloc_data(&mut self, min_size: usize) {
-        self.data.reserve_exact(crate::shared::align_up(min_size, 0x8000));
-        unsafe { self.data.set_len(self.data.capacity()); }
+    fn realloc_data(buffer: &mut Vec<u8>, min_size: usize) {
+        buffer.reserve_exact(crate::shared::align_up(min_size, 0x8000));
+        unsafe { buffer.set_len(buffer.capacity()); }
     }
 
 }
@@ -370,6 +417,7 @@ impl Default for GameOutput {
             messages: Vec::with_capacity(16),
             data: vec![0; 0xF0000],
             data_offset: 0,
+            highlighted: Vec::with_capacity(16)
         }
     }
 

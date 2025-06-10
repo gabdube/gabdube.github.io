@@ -77,13 +77,10 @@ fn primary_mouse_action(game: &mut GameClient) {
             game.data.add_pawn(center_sprite(position, sprite.texcoord.size()));
         }
         GameInputType::Delete => {
-            if let Some(sprite) = game.data.world.sprite_at_position(position) {
-            }
+            game.data.world.delete_sprite_at_position(position);
         },
         GameInputType::Select => {
-            if let Some(sprite) = game.data.world.sprite_at_position(position) {
-                dbg!("{:?}", sprite.rect().splat())
-            }
+            game.data.world.select_sprite_at_position(position);
         }
     }
 }

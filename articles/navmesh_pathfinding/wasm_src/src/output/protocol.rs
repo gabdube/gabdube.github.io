@@ -107,6 +107,8 @@ pub fn compile() -> String {
         &[
             ("UpdateSprites", OutputMessageType::UpdateSprites),
             ("DrawSprites", OutputMessageType::DrawSprites),
+            ("UpdateHighlightSprites", OutputMessageType::UpdateHighlightSprites),
+            ("HighlightSprites", OutputMessageType::HighlightSprites),
             ("UpdateTerrain", OutputMessageType::UpdateTerrain),
             ("DrawDebug", OutputMessageType::DrawDebug),
             ("GuiTextureUpdate", OutputMessageType::GuiTextureUpdate),
@@ -227,6 +229,8 @@ pub fn compile() -> String {
             ("name", "return OutputMessageType[this.ty()] || this.ty();"),
             ("update_sprites", "return new UpdateSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("draw_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("update_highlight_sprites", "return new UpdateSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_highlight_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("draw_insert_sprite", "return new DrawInsertSpriteParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("update_terrain", "return new UpdateTerrainParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("draw_debug", "return new DrawDebugParams(this.view.buffer, this.view.byteOffset + 4);"),

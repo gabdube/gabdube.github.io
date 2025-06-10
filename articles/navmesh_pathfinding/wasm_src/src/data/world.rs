@@ -17,6 +17,7 @@ pub struct InsertSprite {
 
 #[derive(Copy, Clone)]
 pub struct OrderedSprite {
+    pub e: Entity,
     pub y: f32,
     pub sprite: BaseSprite,
 }
@@ -27,6 +28,7 @@ pub struct OrderedSprite {
 pub struct World {
     inner: HecsWorld,
     insert_sprite: Option<InsertSprite>,
+    selected_sprites: Vec<Entity>,
     sprites_by_y_component: Vec<OrderedSprite>,
 }
 
@@ -45,16 +47,59 @@ impl World {
         self.insert_sprite = None;
     }
 
-    pub fn sprite_at_position(&mut self, position: PositionF32) -> Option<BaseSprite> {
-        self.sprites_by_y_component.iter()
+    pub fn delete_sprite_at_position(&mut self, position: PositionF32) {
+        let entity = self.sprites_by_y_component.iter().rev()
             .find(|ordered_sprite| ordered_sprite.sprite.rect().point_inside(position) )
-            .map(|ordered_sprite| ordered_sprite.sprite )
+            .map(|sprite| sprite.e );
+
+        if let Some(e1) = entity {
+            if let Some(index) = self.selected_sprites.iter().position(|&e2| e2 == e1 ) {
+                self.selected_sprites.remove(index);
+            }
+
+            if let Err(err) = self.inner.despawn(e1) {
+                dbg!("Failed to remove entity {:?}", err);
+            }
+        }
+    }
+
+    pub fn clear_selected_sprites(&mut self) {
+        if self.selected_sprites.is_empty() {
+            return;
+        }
+
+        for &entity in self.selected_sprites.iter() {
+            if let Ok(mut sprite) = self.inner.get::<&mut BaseSprite>(entity) {
+                sprite.flags.clear_highlighted();
+                sprite.highlight_color = [0; 3];
+            }
+        }
+
+        self.selected_sprites.clear();
+    }
+
+    pub fn select_sprite_at_position(&mut self, position: PositionF32) {
+        self.clear_selected_sprites();
+
+        let entity = self.sprites_by_y_component.iter().rev()
+            .find(|ordered_sprite| ordered_sprite.sprite.rect().point_inside(position) )
+            .map(|sprite| sprite.e );
+
+        if let Some(entity) = entity {
+            if let Ok(mut sprite) = self.inner.get::<&mut BaseSprite>(entity) {
+                sprite.flags.set_highlighted();
+                sprite.highlight_color = [255; 3];
+                self.selected_sprites.push(entity);
+                // dbg!("Selected {:?}", entity);
+            }
+        }
     }
 
     pub(super) fn add_pawn(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
         let sprites = BaseSprite {
             position,
             texcoord: animate.current_frame(),
+            highlight_color: [0, 0, 0],
             flags: BaseSpriteFlags::empty(),
         };
 
@@ -65,6 +110,7 @@ impl World {
         let sprites = BaseSprite {
             position,
             texcoord: sprite.texcoord,
+            highlight_color: [0, 0, 0],
             flags: BaseSpriteFlags::empty(),
         };
 
@@ -75,6 +121,7 @@ impl World {
         let sprites = BaseSprite {
             position,
             texcoord: sprite.texcoord,
+            highlight_color: [0, 0, 0],
             flags: BaseSpriteFlags::empty(),
         };
 
@@ -83,25 +130,25 @@ impl World {
 
     /// Order all sprites in the world by their y components
     /// Optionally advance the animation if `animate` is true
-    pub fn order_sprites(&mut self, animate: bool) {
+    pub fn order_sprites(&mut self, animate: bool) -> usize {
         use std::cmp::Ordering;
 
         fn copy_sprites(world: &mut World) {
-            for (_, &sprite) in world.inner.query_mut::<&BaseSprite>() {
-                world.sprites_by_y_component.push(OrderedSprite { y: sprite.position.y, sprite })
+            for (e, &sprite) in world.inner.query_mut::<&BaseSprite>() {
+                world.sprites_by_y_component.push(OrderedSprite { e, y: sprite.position.y + sprite.texcoord.height(), sprite })
             }
         }
 
         fn copy_sprites_with_animations(world: &mut World) {
-            for (_, (sprite, animation)) in world.inner.query_mut::<(&mut BaseSprite, &mut AnimationState)>() {
+            for (e, (sprite, animation)) in world.inner.query_mut::<(&mut BaseSprite, &mut AnimationState)>() {
                 animation.current_frame += 1;
                 animation.current_frame = animation.current_frame * ((animation.current_frame < animation.max_frame) as u16);
                 sprite.texcoord = animation.current_frame();
-                world.sprites_by_y_component.push(OrderedSprite { y: sprite.position.y, sprite: *sprite })
+                world.sprites_by_y_component.push(OrderedSprite { e, y: sprite.position.y + sprite.texcoord.height(), sprite: *sprite })
             }
             
-            for (_, &sprite) in world.inner.query_mut::<&BaseSprite>().without::<&AnimationState>() {
-                world.sprites_by_y_component.push(OrderedSprite { y: sprite.position.y, sprite })
+            for (e, &sprite) in world.inner.query_mut::<&BaseSprite>().without::<&AnimationState>() {
+                world.sprites_by_y_component.push(OrderedSprite { e, y: sprite.position.y + sprite.texcoord.height(), sprite })
             }
         }
 
@@ -116,6 +163,8 @@ impl World {
         self.sprites_by_y_component.sort_unstable_by(|v1, v2| {
             v1.y.partial_cmp(&v2.y).unwrap_or(Ordering::Equal)
         });
+
+        self.sprites_by_y_component.len()
     } 
 
     pub fn ordered_sprites<'a>(&'a mut self) -> impl Iterator<Item=BaseSprite> + 'a {
@@ -196,6 +245,7 @@ fn spawn_actors_animated<T: hecs::Component + Default>(
     world: &mut HecsWorld,
 ) {
     let actors = reader.read_array::<EncodeActor>();
+    world.reserve::<(T, BaseSprite, AnimationState)>(actors.len() as u32);
     for actor in actors.iter() {
         let entity = Entity::from_bits(transmute!(actor.entity)).expect("Corrupted entity data");
         world.spawn_at(entity, (T::default(), actor.sprite, actor.animate));
@@ -207,6 +257,7 @@ fn spawn_actors<T: hecs::Component + Default>(
     world: &mut HecsWorld,
 ) {
     let actors = reader.read_array::<EncodeActor>();
+    world.reserve::<(T, BaseSprite)>(actors.len() as u32);
     for actor in actors.iter() {
         let entity = Entity::from_bits(transmute!(actor.entity)).expect("Corrupted entity data");
         world.spawn_at(entity, (T::default(), actor.sprite));
@@ -222,6 +273,7 @@ impl Default for World {
         World {
             inner: HecsWorld::default(),
             insert_sprite: None,
+            selected_sprites: Vec::with_capacity(8),
             sprites_by_y_component: Vec::with_capacity(32),
         }
     }
