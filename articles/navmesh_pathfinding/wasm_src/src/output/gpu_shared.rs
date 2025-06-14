@@ -10,7 +10,6 @@ pub struct GpuSpriteData {
     pub size: [f32; 2],
     pub texcoord_offset: [f32; 2],
     pub texcoord_size: [f32; 2],
-    pub data: i32,
 }
 
 #[repr(C)]

@@ -1,5 +1,5 @@
 //! Serializer and Deserializer for the application data
-use zerocopy::{Immutable, IntoBytes, TryFromBytes, FromBytes};
+use zerocopy::{transmute, FromBytes, Immutable, IntoBytes, TryFromBytes};
 use crate::error::Error;
 
 pub const U32_SIZE: usize = size_of::<u32>();
@@ -18,7 +18,7 @@ pub struct StoreWriter {
 impl StoreWriter {
 
     pub fn new() -> Self {
-        StoreWriter { 
+        StoreWriter {
             data: vec![0u8; 1024*1024],    // 1mb should be more than enough
             data_offset: 0
         }
@@ -119,6 +119,29 @@ impl StoreWriter {
         }
     }
 
+    pub fn write_bool(&mut self, value: bool) {
+        if self.must_realloc(U32_SIZE) {
+            self.realloc(U32_SIZE);
+        }
+
+        self.write_u32(value as u32)
+    }
+
+    pub fn write_entity_option(&mut self, value: Option<hecs::Entity>) { 
+        let size = U32_SIZE + U32_SIZE;
+        if self.must_realloc(size) {
+            self.realloc(size);
+        }
+
+        let raw_values: [u32; 2] = value
+            .map(|v| v.to_bits() )
+            .map(|v| transmute!(v) )
+            .unwrap_or([0, 0]);
+
+        raw_values.write_to_prefix(self.remaining_bytes()).unwrap();
+        self.data_offset += size;
+    }
+
     fn must_realloc(&self, size: usize) -> bool {
         self.data[self.data_offset..].len() < size
     }
@@ -173,6 +196,22 @@ impl<'a> StoreReader<'a> {
             self.try_read().map(Option::Some)
         } else {
             Ok(None)
+        }
+    }
+
+    pub fn try_read_bool(&mut self) -> Result<bool, Error> {
+        self.try_read::<u32>().map(|v| v == 1 )
+    }
+
+    pub fn try_read_entity_option(&mut self) -> Result<Option<hecs::Entity>, Error> {
+        let raw: [u32; 2] = self.try_read()?;
+        if raw[0] == 0 && raw[1] == 0 {
+            Ok(None)
+        } else {
+            match hecs::Entity::from_bits(transmute!(raw)) {
+                Some(entity) => Ok(Some(entity)),
+                None => Ok(None),
+            }
         }
     }
 

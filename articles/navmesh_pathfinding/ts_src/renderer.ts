@@ -150,6 +150,15 @@ export class Renderer {
         return true;
     }
 
+    refresh() {
+        for (let value of this.gui.textures.values()) {
+            this.ctx.deleteTexture(value);
+        }
+
+        this.gui.textures = new Map();
+        this.setup_uniforms();
+    }
+
     init_default_resources(assets: EngineAssets): boolean {
         this.assets = assets;
 
@@ -253,7 +262,7 @@ export class Renderer {
     }
 
     private build_sprite_vao(vao: WebGLVertexArrayObject, instance_base: number): WebGLVertexArrayObject {
-        const GPU_SPRITE_SIZE = 36;
+        const GPU_SPRITE_SIZE = 32;
         const ctx = this.ctx;
         const [position, instance_position, instance_texcoord, instance_data] = this.shaders.sprites_attributes;
         const attributes_offset = instance_base * GPU_SPRITE_SIZE;
@@ -275,11 +284,7 @@ export class Renderer {
 
         ctx.enableVertexAttribArray(instance_texcoord);
         ctx.vertexAttribPointer(instance_texcoord, 4, ctx.FLOAT, false, GPU_SPRITE_SIZE, attributes_offset+16);
-        ctx.vertexAttribDivisor(instance_texcoord, 1);
-
-        ctx.enableVertexAttribArray(instance_data);
-        ctx.vertexAttribIPointer(instance_data, 1, ctx.INT, GPU_SPRITE_SIZE, attributes_offset+32);
-        ctx.vertexAttribDivisor(instance_data, 1);
+        ctx.vertexAttribDivisor(instance_texcoord, 1)
 
         ctx.bindVertexArray(null);
 
@@ -846,7 +851,7 @@ export class Renderer {
         const shaders = this.shaders;
 
         const sprites = build_shader(ctx, assets, "sprites",
-            ["in_position", "in_instance_position", "in_instance_texcoord", "in_instance_data"],
+            ["in_position", "in_instance_position", "in_instance_texcoord"],
             ["view_position", "view_size"]
         );
         if (sprites) {

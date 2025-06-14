@@ -79,6 +79,11 @@ class GameInterface {
         this.protocol = null;
         this.reload_count = 0;
     }
+    free() {
+        if (this.instance) {
+            this.instance.free();
+        }
+    }
     // @ts-ignore
     async init() {
         this.module = await import(GAME_SRC_PATH)
@@ -347,6 +352,13 @@ class Renderer {
         this.setup_base_context();
         return true;
     }
+    refresh() {
+        for (let value of this.gui.textures.values()) {
+            this.ctx.deleteTexture(value);
+        }
+        this.gui.textures = new Map();
+        this.setup_uniforms();
+    }
     init_default_resources(assets) {
         this.assets = assets;
         if (!this.setup_shaders()) {
@@ -434,7 +446,7 @@ class Renderer {
         copy_data_to_sprites_buffer(this.ctx, this.highlight_sprites, data, BASE_SPRITES_HIGHLIGHT_CAPACITY);
     }
     build_sprite_vao(vao, instance_base) {
-        const GPU_SPRITE_SIZE = 36;
+        const GPU_SPRITE_SIZE = 32;
         const ctx = this.ctx;
         const [position, instance_position, instance_texcoord, instance_data] = this.shaders.sprites_attributes;
         const attributes_offset = instance_base * GPU_SPRITE_SIZE;
@@ -452,9 +464,6 @@ class Renderer {
         ctx.enableVertexAttribArray(instance_texcoord);
         ctx.vertexAttribPointer(instance_texcoord, 4, ctx.FLOAT, false, GPU_SPRITE_SIZE, attributes_offset + 16);
         ctx.vertexAttribDivisor(instance_texcoord, 1);
-        ctx.enableVertexAttribArray(instance_data);
-        ctx.vertexAttribIPointer(instance_data, 1, ctx.INT, GPU_SPRITE_SIZE, attributes_offset + 32);
-        ctx.vertexAttribDivisor(instance_data, 1);
         ctx.bindVertexArray(null);
         return vao;
     }
@@ -918,7 +927,7 @@ class Renderer {
         const ctx = this.ctx;
         const assets = this.assets;
         const shaders = this.shaders;
-        const sprites = build_shader(ctx, assets, "sprites", ["in_position", "in_instance_position", "in_instance_texcoord", "in_instance_data"], ["view_position", "view_size"]);
+        const sprites = build_shader(ctx, assets, "sprites", ["in_position", "in_instance_position", "in_instance_texcoord"], ["view_position", "view_size"]);
         if (sprites) {
             shaders.sprites = sprites.program;
             shaders.sprites_attributes = sprites.attributes;
@@ -1382,6 +1391,7 @@ class Engine {
         this.assets = new EngineAssets();
         this.renderer = new Renderer();
         this.input = new GameInput();
+        this.refresh_client = false;
         this.reload_client = false;
         this.reload = false;
         this.exit = false;
@@ -1390,6 +1400,10 @@ class Engine {
 //
 // Init
 //
+function toggleDemo() {
+    const classes = document.body.classList;
+    classes.contains("focus") ? classes.remove("focus") : classes.add("focus");
+}
 function init_handlers(engine) {
     const canvas = engine.renderer.canvas.element;
     const input_state = engine.input;
@@ -1426,6 +1440,12 @@ function init_handlers(engine) {
     });
     canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
     window.addEventListener("keydown", (event) => {
+        if (event.code === "KeyR") {
+            engine.refresh_client = true;
+        }
+        else if (event.code == "Space") {
+            toggleDemo();
+        }
         input_state.keys.set(event.code, true);
         input_state.updates |= UPDATE_KEYS;
     });
@@ -1434,6 +1454,14 @@ function init_handlers(engine) {
         input_state.keys.set(event.code, false);
         input_state.updates |= UPDATE_KEYS;
     });
+}
+function start_client(engine) {
+    const params = {
+        max_texture_size: engine.renderer.max_texture_size(),
+        screen_width: engine.renderer.canvas.width,
+        screen_height: engine.renderer.canvas.height,
+    };
+    return engine.game.start(engine.assets, params);
 }
 async function init() {
     const app = new Engine();
@@ -1449,12 +1477,7 @@ async function init() {
     if (!app.renderer.init_default_resources(app.assets)) {
         return null;
     }
-    const params = {
-        max_texture_size: app.renderer.max_texture_size(),
-        screen_width: app.renderer.canvas.width,
-        screen_height: app.renderer.canvas.height,
-    };
-    if (!app.game.start(app.assets, params)) {
+    if (!start_client(app)) {
         return null;
     }
     init_handlers(app);
@@ -1567,6 +1590,13 @@ async function reload(engine) {
     }
     engine.reload = false;
 }
+function refresh(engine) {
+    engine.refresh_client = false;
+    engine.game.free();
+    start_client(engine);
+    engine.renderer.refresh();
+    console.log("Game client refreshed");
+}
 //
 // Runtime
 //
@@ -1577,6 +1607,9 @@ function run(engine) {
     }
     update(engine, performance.now());
     render(engine);
+    if (engine.refresh_client) {
+        refresh(engine);
+    }
     if (engine.reload) {
         reload(engine)
             .then(() => requestAnimationFrame(boundedRun));

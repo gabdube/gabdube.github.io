@@ -131,6 +131,7 @@ fn must_reload_file(event: &notify::event::Event) -> bool {
 #[cfg(feature="watch")]
 fn watch_files(assets: &SharedAssetsCollection) {
     use std::sync::mpsc;
+    use std::path::Path;
     use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
     const WAIT: ::std::time::Duration = ::std::time::Duration::from_millis(200);
@@ -139,14 +140,19 @@ fn watch_files(assets: &SharedAssetsCollection) {
     ::std::thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
-        let base_path = ::std::path::Path::new("./articles/").canonicalize().unwrap();
-        let web_path_str = ::std::path::Path::new(".")
+        let articles_path = Path::new("./articles/").canonicalize().unwrap();
+        let index_path = Path::new("./index.html").canonicalize().unwrap();
+        let styles_path = Path::new("./styles.css").canonicalize().unwrap();
+
+        let web_path_str = Path::new(".")
             .canonicalize().unwrap()
             .to_str().unwrap()
             .to_string();
 
         let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
-        watcher.watch(base_path.as_ref(), RecursiveMode::Recursive).unwrap();
+        watcher.watch(&articles_path, RecursiveMode::Recursive).unwrap();
+        watcher.watch(&index_path, RecursiveMode::NonRecursive).unwrap();
+        watcher.watch(&styles_path, RecursiveMode::NonRecursive).unwrap();
 
         let mut accumulate: HashSet<(String, String)> = HashSet::default();
 

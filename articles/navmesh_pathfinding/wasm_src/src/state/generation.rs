@@ -3,15 +3,25 @@ use crate::shared::{SizeF32, PositionF32, pos};
 use crate::GameClient;
 use super::{GameStateValue, GameInputType, common_inputs};
 
-  //game.data.add_pawn(crate::shared::pos(100.0, 100.0));
-    // for (_, sprite) in game.data.world.iter_all_sprites() {
-    //     game.data.debug.draw_rect(sprite.rect(), 2.0, [255, 0, 0, 255]);
-    // }
+// for (_, sprite) in game.data.world.iter_all_sprites() {
+//     game.data.debug.draw_rect(sprite.rect(), 2.0, [255, 0, 0, 255]);
+// }
 
 
 pub fn init(game: &mut GameClient) {
     game.data.reset();
-    game.data.initialize_terrain(32, 16);
+    game.data.initialize_terrain(18, 16);
+
+    game.data.add_castle(pos(253.0, 332.0));
+
+    game.data.add_house(pos(606.0, 492.0));
+    game.data.add_house(pos(343.0, 690.0));
+    game.data.add_house(pos(82.0, 476.0));
+    game.data.add_house(pos(179.0, 56.0));
+    game.data.add_house(pos(602.0, 156.0));
+
+    game.data.add_pawn(pos(151.0, 723.0));
+    game.data.add_pawn(pos(446.0, 128.0));
     
     game.state.value = GameStateValue::Generation;
     game.data.gui.set_state(game.state.value, GameInputType::Select);
@@ -22,7 +32,13 @@ pub fn update(game: &mut GameClient) {
     set_insert_sprite(game);
 
     if game.data.globals.primary_mouse_just_pressed() {
-        primary_mouse_action(game);
+        if game.data.gui.position_outside_gui(game.data.globals.mouse_position) {
+            primary_mouse_actions(game);
+        }
+    }
+
+    if game.data.globals.mouse_moved() {
+        mouse_moved_actions(game);
     }
 }
 
@@ -56,12 +72,8 @@ fn set_insert_sprite_value(game: &mut GameClient, sprite: StaticSprite) {
     }
 }
 
-fn primary_mouse_action(game: &mut GameClient) {
+fn primary_mouse_actions(game: &mut GameClient) {
     let globals = &game.data.globals;
-    if game.data.gui.position_inside_gui(globals.mouse_position) {
-        return;
-    }
-
     let position = globals.mouse_position - globals.view_offset;
     match game.state.input_type {
         GameInputType::PlaceCastle => {
@@ -80,8 +92,30 @@ fn primary_mouse_action(game: &mut GameClient) {
             game.data.world.delete_sprite_at_position(position);
         },
         GameInputType::Select => {
+            game.data.world.clear_selected_sprites();
             game.data.world.select_sprite_at_position(position);
         }
+    }
+}
+
+fn mouse_moved_actions(game: &mut GameClient) {
+    match game.state.input_type {
+        GameInputType::Delete => {
+            let globals = &game.data.globals;
+            let position = globals.mouse_position - globals.view_offset;
+            let hovered_new = game.data.world.sprite_at_position(position);
+            let hovered_old = game.state.hovered_entity;
+            if hovered_new != hovered_old {
+                if let Some(old) = hovered_old {
+                    game.data.world.clear_sprite_highlight(old);
+                }
+                if let Some(new) = hovered_new {
+                    game.data.world.set_sprite_highlight(new, [255, 0, 0]);
+                }
+                game.state.hovered_entity = hovered_new;
+            }
+        },
+        _ => {}
     }
 }
 

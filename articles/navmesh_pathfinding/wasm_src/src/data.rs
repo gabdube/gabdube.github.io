@@ -45,6 +45,9 @@ impl GlobalParams {
     pub fn primary_mouse_just_pressed(&self) -> bool { self.mouse_buttons[0].just_pressed() }
     pub fn middle_mouse_just_pressed(&self) -> bool { self.mouse_buttons[2].just_pressed() }
     pub fn middle_mouse_released(&self) -> bool { self.mouse_buttons[2].released() }
+    pub fn mouse_moved(&self) -> bool {
+        self.mouse_position_old.x != self.mouse_position.x || self.mouse_position_old.y != self.mouse_position.y
+    }
     pub fn mouse_delta(&self) -> Option<PositionF32> {
         let delta_x = self.mouse_position_old.x - self.mouse_position.x;
         let delta_y = self.mouse_position_old.y - self.mouse_position.y;
@@ -54,6 +57,7 @@ impl GlobalParams {
             None
         }
     }
+    
 }
 
 #[derive(Default)]

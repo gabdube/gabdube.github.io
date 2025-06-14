@@ -119,7 +119,6 @@ impl GameOutput {
                 size: [width, height],
                 texcoord_offset: [sprite.texcoord.left, sprite.texcoord.top],
                 texcoord_size: [width, height],
-                data: sprite.flags.0 as i32
             };
             output.push_data(&gpu_sprite);
 
@@ -141,9 +140,10 @@ impl GameOutput {
             return;
         }
 
+        let highlighted_count = output.highlighted.len();
         let update_highlight_sprites = UpdateSpritesParams { 
             offset_bytes: output.data_offset,
-            size_bytes: instance_count * size_of::<GpuHighlightedSprite>(),
+            size_bytes: highlighted_count * size_of::<GpuHighlightedSprite>(),
         };
         output.messages.push(OutputMessage { 
             ty: OutputMessageType::UpdateHighlightSprites,
@@ -152,7 +152,7 @@ impl GameOutput {
 
         let highlight_sprites = DrawSpritesParams { 
             instance_base: 0,
-            instance_count: instance_count as u32,
+            instance_count: highlighted_count as u32,
             texture_id
         };
         output.messages.push(OutputMessage { 

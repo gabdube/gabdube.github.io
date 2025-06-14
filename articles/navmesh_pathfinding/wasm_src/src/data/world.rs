@@ -47,12 +47,14 @@ impl World {
         self.insert_sprite = None;
     }
 
-    pub fn delete_sprite_at_position(&mut self, position: PositionF32) {
-        let entity = self.sprites_by_y_component.iter().rev()
+    pub fn sprite_at_position(&mut self, position: PositionF32) -> Option<Entity> {
+        self.sprites_by_y_component.iter().rev()
             .find(|ordered_sprite| ordered_sprite.sprite.rect().point_inside(position) )
-            .map(|sprite| sprite.e );
+            .map(|sprite| sprite.e )
+    }
 
-        if let Some(e1) = entity {
+    pub fn delete_sprite_at_position(&mut self, position: PositionF32) {
+        if let Some(e1) = self.sprite_at_position(position) {
             if let Some(index) = self.selected_sprites.iter().position(|&e2| e2 == e1 ) {
                 self.selected_sprites.remove(index);
             }
@@ -79,19 +81,27 @@ impl World {
     }
 
     pub fn select_sprite_at_position(&mut self, position: PositionF32) {
-        self.clear_selected_sprites();
-
-        let entity = self.sprites_by_y_component.iter().rev()
-            .find(|ordered_sprite| ordered_sprite.sprite.rect().point_inside(position) )
-            .map(|sprite| sprite.e );
-
-        if let Some(entity) = entity {
+        if let Some(entity) = self.sprite_at_position(position) {
             if let Ok(mut sprite) = self.inner.get::<&mut BaseSprite>(entity) {
                 sprite.flags.set_highlighted();
                 sprite.highlight_color = [255; 3];
                 self.selected_sprites.push(entity);
                 // dbg!("Selected {:?}", entity);
             }
+        }
+    }
+
+    pub fn clear_sprite_highlight(&mut self, entity: Entity) {
+        if let Ok(mut sprite) = self.inner.get::<&mut BaseSprite>(entity) {
+            sprite.flags.clear_highlighted();
+            sprite.highlight_color = [0; 3];
+        }
+    }
+
+    pub fn set_sprite_highlight(&mut self, entity: Entity, color: [u8; 3]) {
+        if let Ok(mut sprite) = self.inner.get::<&mut BaseSprite>(entity) {
+            sprite.flags.set_highlighted();
+            sprite.highlight_color = color;
         }
     }
 

@@ -29,12 +29,12 @@ pub enum GameInputType {
     PlacePawn,
 }
 
-#[derive(Default, Copy, Clone, TryFromBytes, IntoBytes, Immutable)]
+#[derive(Default, Copy, Clone)]
 pub struct GameState {
+    pub hovered_entity: Option<hecs::Entity>,
     pub input_type: GameInputType,
     pub value: GameStateValue,
     pub scroll_view: bool,
-    pub _padding: [u8; 3],
 }
 
 pub fn handle_gui_events(client: &mut GameClient) {
@@ -45,6 +45,7 @@ pub fn handle_gui_events(client: &mut GameClient) {
                 client.state.value = new_state;
             },
             GuiEvent::SetInputType(new_input) => {
+                client.data.world.clear_selected_sprites();
                 client.state.input_type = new_input;
             }
             GuiEvent::SetDebugFlags(new_flags) => {
@@ -80,10 +81,20 @@ pub fn common_inputs(game: &mut GameClient) {
 
 impl crate::store::StoreLoad for GameState {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
-        writer.write(self);
+        writer.write_entity_option(self.hovered_entity);
+        writer.write(&self.input_type);
+        writer.write(&self.value);
+        writer.write_bool(self.scroll_view);
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
-        reader.try_read()
+        let mut state = GameState::default();
+
+        state.hovered_entity = reader.try_read_entity_option()?;
+        state.input_type = reader.try_read()?;
+        state.value = reader.try_read()?;
+        state.scroll_view = reader.try_read_bool()?;
+
+        Ok(state)
     }
 }

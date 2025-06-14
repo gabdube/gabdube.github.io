@@ -115,10 +115,6 @@ impl Gui {
         position.y < self.view[1]
     }
 
-    pub fn position_inside_gui(&self, position: PositionF32) -> bool {
-        position.y >= self.view[1]
-    }
-
     pub fn events(&mut self) -> Vec<GuiEvent> {
         let cloned;
         if self.events.len() > 0 {

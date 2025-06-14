@@ -34,6 +34,7 @@ class Engine {
     renderer: Renderer = new Renderer();
     input: GameInput = new GameInput();
 
+    refresh_client: boolean = false;
     reload_client: boolean = false;
     reload: boolean = false;
     exit: boolean = false;
@@ -42,6 +43,11 @@ class Engine {
 //
 // Init
 //
+
+function toggleDemo() {
+    const classes = document.body.classList;
+    classes.contains("focus") ? classes.remove("focus") : classes.add("focus");
+}
 
 function init_handlers(engine: Engine) {
     const canvas = engine.renderer.canvas.element;
@@ -76,14 +82,31 @@ function init_handlers(engine: Engine) {
     canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
 
     window.addEventListener("keydown", (event) => {
+        if (event.code === "KeyR") {
+            engine.refresh_client = true;
+        } else if (event.code == "Space") {
+            toggleDemo();   
+        }
+
         input_state.keys.set(event.code, true);
         input_state.updates |= UPDATE_KEYS;
     });
+
     window.addEventListener("keyup", (event) => {
         // console.log(event.code);
         input_state.keys.set(event.code, false);
         input_state.updates |= UPDATE_KEYS;
     });
+}
+
+function start_client(engine: Engine): boolean {
+    const params: GameStartParams = { 
+        max_texture_size: engine.renderer.max_texture_size(),
+        screen_width: engine.renderer.canvas.width,
+        screen_height: engine.renderer.canvas.height,
+    };
+
+    return engine.game.start(engine.assets, params);
 }
 
 async function init(): Promise<Engine | null> {
@@ -103,13 +126,8 @@ async function init(): Promise<Engine | null> {
     if (!app.renderer.init_default_resources(app.assets)) {
         return null;
     }
-    
-    const params: GameStartParams = { 
-        max_texture_size: app.renderer.max_texture_size(),
-        screen_width: app.renderer.canvas.width,
-        screen_height: app.renderer.canvas.height,
-    };
-    if (!app.game.start(app.assets, params)) {
+ 
+    if (!start_client(app)) {
         return null;
     }
 
@@ -248,6 +266,14 @@ async function reload(engine: Engine) {
     engine.reload = false;
 }
 
+function refresh(engine: Engine) {
+    engine.refresh_client = false;
+    engine.game.free();
+    start_client(engine);
+    engine.renderer.refresh();
+    console.log("Game client refreshed");
+}
+
 //
 // Runtime
 //
@@ -260,6 +286,10 @@ function run(engine: Engine) {
 
     update(engine, performance.now());
     render(engine);
+
+    if (engine.refresh_client) {
+        refresh(engine);
+    }
 
     if (engine.reload) {
         reload(engine)

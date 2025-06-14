@@ -46,6 +46,10 @@ export class GameInterface {
     protocol: any = null;
     reload_count: number = 0;
 
+    free() {
+        if (this.instance) { this.instance.free(); }
+    }
+
     // @ts-ignore
     async init(): Promise<boolean> {
         this.module = await import(GAME_SRC_PATH)
