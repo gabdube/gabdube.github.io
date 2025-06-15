@@ -135,6 +135,8 @@ async function init(): Promise<Engine | null> {
 
     app.ws.open();
 
+    (window as any).app = app;
+
     return app;
 }
 

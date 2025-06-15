@@ -193,7 +193,7 @@ impl GameOutput {
     }
 
     fn update_terrain(client: &mut GameClient) {
-        const TERRAIN_SPRITE_SIZE: f32 = 64.0;
+        use crate::data::terrain::TERRAIN_SPRITE_SIZE;
 
         let data = &client.data;
         let output = &mut client.output;

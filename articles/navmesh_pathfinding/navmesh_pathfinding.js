@@ -538,6 +538,7 @@ class Renderer {
             realloc_terrain(ctx, this.terrain, size);
             this.setup_terrain_vao();
         }
+        this.terrain.attributes_size_bytes = size;
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
         ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
     }
@@ -566,6 +567,8 @@ class Renderer {
             realloc_debug(this.ctx, this.debug, index_size, vertex_size);
             this.setup_debug_vao();
         }
+        debug.index_size = index_size;
+        debug.vertex_size = vertex_size;
         ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.debug.index);
         ctx.bufferSubData(ctx.ELEMENT_ARRAY_BUFFER, 0, updates.get_data(index_offset, index_size));
         ctx.bindBuffer(ctx.ARRAY_BUFFER, this.debug.vertex);
@@ -1283,6 +1286,7 @@ function copy_data_to_sprites_buffer(ctx, sprites, data, base_capacity) {
         sprites.attributes = realloc_buffer(ctx, sprites.attributes, ctx.ARRAY_BUFFER, sprites.attributes_capacity_bytes, new_capacity, false);
         sprites.attributes_capacity_bytes = new_capacity;
     }
+    sprites.attributes_size_bytes = size;
     ctx.bindBuffer(ctx.ARRAY_BUFFER, sprites.attributes);
     ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, data);
 }
@@ -1482,6 +1486,7 @@ async function init() {
     }
     init_handlers(app);
     app.ws.open();
+    window.app = app;
     return app;
 }
 //

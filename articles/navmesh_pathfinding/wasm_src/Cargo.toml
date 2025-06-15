@@ -27,5 +27,5 @@ fnv = "1.0.7"
 # Egui
 egui = { version = "0.31.1", default-features = false, features = [], optional = true }
 
-# 2D Delaunay triangulation
-delaunator = "1.0.2"
+# Used by delaunator
+robust = "1.0.0"

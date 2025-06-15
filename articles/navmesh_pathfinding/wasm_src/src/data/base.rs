@@ -2,6 +2,10 @@ use zerocopy_derive::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 use crate::shared::{PositionF32, AABB, pos, size, aabb};
 
 macro_rules! flags {
+    ($get:ident, $value:expr) => {
+        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
+    };
+
     ($get:ident, $set:ident, $clear:ident, $value:expr) => {
         #[inline(always)] pub fn $set(&mut self) { self.0 |= $value; }
         #[inline(always)] pub fn $clear(&mut self) { self.0 &= !$value; }
@@ -29,11 +33,13 @@ pub struct DebugFlags(pub u32);
 
 impl DebugFlags {
     pub const SHOW_NAVMESH: u32 = 0x1;
-    pub const SHOW_COLLISION_BOXES: u32 = 0x2;
-    pub const SHOW_HOVERED_TRIANGLE: u32 = 0x4;
-    pub const SHOW_CELL_CENTERS: u32 = 0x8;
-    pub const SHOW_PATH: u32 = 0x10;
-    pub const SHOW_BLOCKED_CELLS: u32 = 0x20;
+    pub const SHOW_HOVERED_TRIANGLE: u32 = 0x2;
+    pub const SHOW_CELL_CENTERS: u32 = 0x4;
+    pub const SHOW_PATH: u32 = 0x8;
+
+    flags!(show_navmesh, Self::SHOW_NAVMESH);
+    flags!(show_cell_centers, Self::SHOW_CELL_CENTERS);
+    flags!(show_hovered_triangle, Self::SHOW_HOVERED_TRIANGLE);
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]

@@ -1,6 +1,5 @@
 pub mod generation;
 pub mod navigation;
-pub mod obstacles;
 pub mod final_demo;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
@@ -14,7 +13,6 @@ pub enum GameStateValue {
     Uninitialized,
     Generation,
     Navigation,
-    Obstacles,
     FinalDemo
 }
 
@@ -37,7 +35,7 @@ pub struct GameState {
     pub scroll_view: bool,
 }
 
-pub fn handle_gui_events(client: &mut GameClient) {
+pub fn propagate_gui_events(client: &mut GameClient) {
     let events = client.data.gui.events();
     for event in events {
         match event {
@@ -53,6 +51,7 @@ pub fn handle_gui_events(client: &mut GameClient) {
             },
             GuiEvent::ResetWorld => {
                 client.data.clear_sprites();
+                client.data.compute_navigation();
             },
             GuiEvent::ResetPawnPosition => {
 

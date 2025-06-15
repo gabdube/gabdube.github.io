@@ -201,6 +201,11 @@ body.article > #demo {
     grid-row-end: footer;
 }
 
+.article-h > a {
+    text-decoration: none;
+    color: inherit
+}
+
 @media (max-width: 999px) {
     body.article {
         grid-template-columns: [article] 100% [separator] 0px [canvas] 0px;

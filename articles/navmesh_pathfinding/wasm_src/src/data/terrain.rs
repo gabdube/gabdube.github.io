@@ -1,6 +1,9 @@
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
 use crate::store::StoreLoad;
 
+// This value is also hardcoded in the terrain shaders
+pub const TERRAIN_SPRITE_SIZE: f32 = 64.0;
+
 #[derive(Copy, Clone, TryFromBytes, IntoBytes, Immutable)]
 #[repr(u8)]
 pub enum TerrainCell {

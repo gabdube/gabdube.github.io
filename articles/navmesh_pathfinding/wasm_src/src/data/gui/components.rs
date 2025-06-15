@@ -24,7 +24,6 @@ pub fn left_panel(ui: &mut egui::Ui, params: LeftPanelParams) {
                 let mut game_state_update = false;
                 game_state_update |= ui.selectable_value(params.state, GameStateValue::Generation, "Generation").clicked();
                 game_state_update |= ui.selectable_value(params.state, GameStateValue::Navigation, "Navigation").clicked();
-                game_state_update |= ui.selectable_value(params.state, GameStateValue::Obstacles, "Obstacles").clicked();
                 game_state_update |= ui.selectable_value(params.state, GameStateValue::FinalDemo, "Final Demo").clicked();
 
                 if game_state_update {
@@ -76,25 +75,10 @@ pub fn navigation_panel(ui: &mut egui::Ui, params: PanelParams) {
             }
         });
         ui.separator();
-        bitflag_checkbox(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH);
+        bitflag_checkbox2(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH, 0, DebugFlags::SHOW_CELL_CENTERS);
+        bitflag_checkbox2(ui, params.events, "Show cell centers", params.debug_flags,  DebugFlags::SHOW_CELL_CENTERS, DebugFlags::SHOW_NAVMESH, 0);
         bitflag_checkbox(ui, params.events, "Show hovered triangle", params.debug_flags, DebugFlags::SHOW_HOVERED_TRIANGLE);
-        bitflag_checkbox(ui, params.events, "Show cell centers", params.debug_flags, DebugFlags::SHOW_CELL_CENTERS);
-        bitflag_checkbox(ui, params.events, "Show path", params.debug_flags, DebugFlags::SHOW_PATH);
-    });
-}
-
-pub fn obstacles_panel(ui: &mut egui::Ui, params: PanelParams) {
-    ui.vertical(|ui| {
-        ui.horizontal(|ui| {
-            if ui.button("Reset Pawn").clicked() {
-                params.events.push(GuiEvent::ResetPawnPosition);
-            }
-        });
-        ui.separator();
-        bitflag_checkbox(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH);
-        bitflag_checkbox(ui, params.events, "Show collisions box", params.debug_flags, DebugFlags::SHOW_COLLISION_BOXES);
-        bitflag_checkbox(ui, params.events, "Show blocked cells", params.debug_flags, DebugFlags::SHOW_BLOCKED_CELLS);
-        bitflag_checkbox(ui, params.events, "Show path", params.debug_flags, DebugFlags::SHOW_PATH);
+        bitflag_checkbox(ui, params.events, "Show path to mouse", params.debug_flags, DebugFlags::SHOW_PATH);
     });
 }
 
@@ -136,6 +120,26 @@ fn bitflag_checkbox(
             flags.0 |= mask;
         } else {
             flags.0 &= !mask;
+        }
+        events.push(GuiEvent::SetDebugFlags(*flags));
+    }   
+}
+
+fn bitflag_checkbox2(
+    ui: &mut egui::Ui,
+    events: &mut Vec<GuiEvent>,
+    value: &str,
+    flags: &mut DebugFlags,
+    mask: u32,
+    extra_set: u32,
+    extra_remove: u32,
+) {
+    let mut check_value = flags.0 & mask > 0;
+    if ui.checkbox(&mut check_value, value).changed() {
+        if check_value {
+            flags.0 |= mask | extra_set;
+        } else {
+            flags.0 &= !(mask | extra_remove);
         }
         events.push(GuiEvent::SetDebugFlags(*flags));
     }   

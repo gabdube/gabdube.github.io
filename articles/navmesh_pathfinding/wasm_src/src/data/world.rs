@@ -9,6 +9,8 @@ use super::base::{BaseSprite, BaseSpriteFlags, AnimationState, StaticSprite};
 #[derive(Default)] pub struct IsCastle;
 #[derive(Default)] pub struct IsHouse;
 
+#[derive(Default)] pub struct HasCollision;
+
 #[derive(Copy, Clone, IntoBytes, FromBytes, Immutable)]
 pub struct InsertSprite {
     pub position: PositionF32,
@@ -105,6 +107,10 @@ impl World {
         }
     }
 
+    pub fn sprites_with_collisions(&self) -> hecs::QueryBorrow<(&BaseSprite, &HasCollision)> {
+        self.inner.query::<(&BaseSprite, &HasCollision)>()
+    }
+
     pub(super) fn add_pawn(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
         let sprites = BaseSprite {
             position,
@@ -124,7 +130,7 @@ impl World {
             flags: BaseSpriteFlags::empty(),
         };
 
-        self.inner.spawn((IsHouse, sprites))
+        self.inner.spawn((IsHouse, HasCollision, sprites))
     }
 
     pub(super) fn add_castle(&mut self, position: PositionF32, sprite: StaticSprite) -> Entity {
@@ -135,7 +141,7 @@ impl World {
             flags: BaseSpriteFlags::empty(),
         };
 
-        self.inner.spawn((IsCastle, sprites))
+        self.inner.spawn((IsCastle, HasCollision, sprites))
     }
 
     /// Order all sprites in the world by their y components
@@ -270,7 +276,7 @@ fn spawn_actors<T: hecs::Component + Default>(
     world.reserve::<(T, BaseSprite)>(actors.len() as u32);
     for actor in actors.iter() {
         let entity = Entity::from_bits(transmute!(actor.entity)).expect("Corrupted entity data");
-        world.spawn_at(entity, (T::default(), actor.sprite));
+        world.spawn_at(entity, (T::default(), HasCollision, actor.sprite));
     }
 }
 

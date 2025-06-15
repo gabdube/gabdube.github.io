@@ -14,6 +14,9 @@ use terrain::Terrain;
 #[cfg(not(feature="gui"))] pub use nogui as gui;
 use gui::Gui;
 
+pub mod navigation;
+use navigation::NavigationState;
+
 pub mod debug;
 use debug::DebugState;
 
@@ -66,6 +69,7 @@ pub struct GameData {
     pub assets: Assets,
     pub world: World,
     pub terrain: Terrain,
+    pub navigation: NavigationState,
     pub debug: DebugState,
     pub gui: Gui,
 }
@@ -75,18 +79,24 @@ impl GameData {
     pub fn reset(&mut self) {
         self.world = World::default();
         self.terrain = Terrain::default();
+        self.navigation.clear();
         self.globals.flags.set_update_terrain();
         self.globals.total_sprites = 0;
     }
 
     pub fn clear_sprites(&mut self) {
         self.world = World::default();
+        self.navigation.clear();
         self.globals.total_sprites = 0;
     }
 
     pub fn initialize_terrain(&mut self, width: u32, height: u32) {
         self.terrain.init(width, height);
         self.globals.flags.set_update_terrain();
+    }
+
+    pub fn compute_navigation(&mut self) {
+        NavigationState::rebuild_navmesh(self);
     }
 
     pub fn prepare_update(&mut self, new_time: f64) {
@@ -120,9 +130,20 @@ impl GameData {
         g.mouse_buttons[1].flip();
         g.mouse_buttons[2].flip();
         g.mouse_position_old = g.mouse_position;
+    }
 
+    pub fn update_gui(&mut self) {
         if self.gui.update() {
-            g.flags.set_update_gui();
+            self.globals.flags.set_update_gui();
+        }
+    }
+
+    pub fn generate_debug_info(&mut self) {
+        let debug_flags = self.globals.debug_flags;
+        let debug = &mut self.debug;
+
+        if debug_flags.show_navmesh() {
+            self.navigation.debug_navmesh(debug, debug_flags.show_cell_centers());
         }
     }
 
@@ -169,6 +190,7 @@ impl StoreLoad for GameData {
         self.assets.store(writer);
         self.world.store(writer);
         self.terrain.store(writer);
+        self.navigation.store(writer);
         self.gui.store(writer);
     }
 
@@ -178,6 +200,7 @@ impl StoreLoad for GameData {
         data.assets = Assets::load(reader)?;
         data.world = World::load(reader)?;
         data.terrain = Terrain::load(reader)?;
+        data.navigation = NavigationState::load(reader)?;
         data.gui = Gui::load(reader)?;
 
         data.gui.load_font(&data.assets)?;

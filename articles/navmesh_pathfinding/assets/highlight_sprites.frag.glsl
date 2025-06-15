@@ -3,7 +3,7 @@
 precision highp float;
 
 in vec4 highlight_color;
-flat in vec4 texcoord_bounds;
+in vec4 texcoord_bounds;
 in vec2 uv;
 
 out vec4 outColor;

@@ -9,7 +9,7 @@ uniform vec2 view_position;
 uniform vec2 view_size;
 
 out vec4 highlight_color;
-flat out vec4 texcoord_bounds;
+out vec4 texcoord_bounds;
 out vec2 uv;
 
 

@@ -1,29 +1,30 @@
-use crate::data::base::StaticSprite;
+use crate::data::base::{StaticSprite, DebugFlags};
 use crate::shared::{SizeF32, PositionF32, pos};
 use crate::GameClient;
 use super::{GameStateValue, GameInputType, common_inputs};
 
-// for (_, sprite) in game.data.world.iter_all_sprites() {
-//     game.data.debug.draw_rect(sprite.rect(), 2.0, [255, 0, 0, 255]);
-// }
-
-
 pub fn init(game: &mut GameClient) {
-    game.data.reset();
-    game.data.initialize_terrain(18, 16);
+    let data = &mut game.data;
 
-    game.data.add_castle(pos(253.0, 332.0));
+    data.reset();
+    data.initialize_terrain(20, 16);
 
-    game.data.add_house(pos(606.0, 492.0));
-    game.data.add_house(pos(343.0, 690.0));
-    game.data.add_house(pos(82.0, 476.0));
-    game.data.add_house(pos(179.0, 56.0));
-    game.data.add_house(pos(602.0, 156.0));
+    data.add_castle(pos(253.0, 332.0));
 
-    game.data.add_pawn(pos(151.0, 723.0));
-    game.data.add_pawn(pos(446.0, 128.0));
+    data.add_house(pos(606.0, 492.0));
+    data.add_house(pos(343.0, 690.0));
+    data.add_house(pos(82.0, 476.0));
+    data.add_house(pos(179.0, 56.0));
+    data.add_house(pos(602.0, 156.0));
+
+    data.add_pawn(pos(151.0, 723.0));
+    data.add_pawn(pos(446.0, 128.0));
+
+    data.compute_navigation();
     
-    game.state.value = GameStateValue::Generation;
+    game.state.value = GameStateValue::Navigation;
+    game.data.globals.debug_flags.0 |= DebugFlags::SHOW_NAVMESH | DebugFlags::SHOW_HOVERED_TRIANGLE;
+    game.data.gui.set_debug_flags(game.data.globals.debug_flags);
     game.data.gui.set_state(game.state.value, GameInputType::Select);
 }
 
@@ -79,17 +80,21 @@ fn primary_mouse_actions(game: &mut GameClient) {
         GameInputType::PlaceCastle => {
             let sprite = game.data.assets.atlas.castle;
             game.data.add_castle(center_sprite(position, sprite.texcoord.size()));
+            game.data.compute_navigation();
         },
         GameInputType::PlaceHouse => {
             let sprite = game.data.assets.atlas.house;
             game.data.add_house(center_sprite(position, sprite.texcoord.size()));
+            game.data.compute_navigation();
         },
         GameInputType::PlacePawn => {
             let sprite = game.data.assets.atlas.pawn_idle.sprite();
             game.data.add_pawn(center_sprite(position, sprite.texcoord.size()));
+            game.data.compute_navigation();
         }
         GameInputType::Delete => {
             game.data.world.delete_sprite_at_position(position);
+            game.data.compute_navigation();
         },
         GameInputType::Select => {
             game.data.world.clear_selected_sprites();

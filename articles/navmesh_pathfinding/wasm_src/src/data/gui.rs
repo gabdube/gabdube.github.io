@@ -18,6 +18,7 @@ pub enum GuiEvent {
 
 /// Egui wrapper
 pub struct Gui {
+    events: Vec<GuiEvent>,
     ctx: egui::Context,
     input: Box<egui::RawInput>,
     output: Box<egui::FullOutput>,
@@ -28,7 +29,6 @@ pub struct Gui {
     game_state: GameStateValue,
     game_input: GameInputType,
     debug_flags: DebugFlags,
-    events: Vec<GuiEvent>,
     force_repaint: bool,
 }
 
@@ -80,7 +80,6 @@ impl Gui {
                 match self.game_state {
                     GameStateValue::Generation => components::generation_panel(ui, params),
                     GameStateValue::Navigation => components::navigation_panel(ui, params),
-                    GameStateValue::Obstacles => components::obstacles_panel(ui, params),
                     GameStateValue::FinalDemo => components::final_panel(ui, params),
                     _ => {}
                 }
@@ -235,6 +234,7 @@ impl Default for Gui {
 
     fn default() -> Self {
         Gui {
+            events: Vec::new(),
             ctx: egui::Context::default(),
             input: Box::default(),
             output: Box::default(),
@@ -245,7 +245,6 @@ impl Default for Gui {
             game_state: GameStateValue::Uninitialized,
             game_input: GameInputType::Select,
             debug_flags: DebugFlags::default(),
-            events: Vec::new(),
             force_repaint: true,
         }
     }

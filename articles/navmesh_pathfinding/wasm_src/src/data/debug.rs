@@ -1,11 +1,16 @@
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
 use crate::output::GpuDebugVertex;
-use crate::shared::AABB;
+use crate::shared::{AABB, PositionF32};
 
 #[derive(Copy, Clone, Immutable, IntoBytes, TryFromBytes)]
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub enum DebugElement {
-    Rect { base: AABB, line_thickness: f32, color: [u8; 4] },
+    Rect { base: AABB, line_thickness: f32, color: [u8; 4], _padding: [u8; 4] },
+    FillRect { base: AABB, color: [u8; 4], _padding: [u8; 8] },
+    Triangle { v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4] },
+    FillTriangle { v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4] },
+    Point { pt: PositionF32, size: f32, color: [u8; 4], _padding: [u8; 12] },
 }
 
 #[derive(Default)]
@@ -24,7 +29,19 @@ impl DebugState {
     }
 
     pub fn draw_rect(&mut self, rect: AABB, line_thickness: f32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Rect { base: rect, line_thickness, color });
+        self.elements.push(DebugElement::Rect { base: rect, line_thickness, color, _padding: [0; 4] });
+    }
+
+    pub fn draw_triangle(&mut self, v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4]) {
+        self.elements.push(DebugElement::Triangle { v0, v1, v2, color })
+    }
+
+    pub fn fill_triangle(&mut self, v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4]) {
+        self.elements.push(DebugElement::FillTriangle { v0, v1, v2, color })
+    }
+
+    pub fn draw_point(&mut self, pt: PositionF32, size: f32, color: [u8; 4]) {
+        self.elements.push(DebugElement::Point { pt, size, color, _padding: [0; 12] })
     }
 
     /// Returns [index_count, index_buffer_size, vertex_buffer_size] required to hold the current debug state
@@ -36,6 +53,18 @@ impl DebugState {
                 DebugElement::Rect { .. } => {
                     index_count += 24;
                     vertex_count += 8;
+                },
+                DebugElement::FillRect { .. } | DebugElement::Point { .. } => {
+                    index_count += 6;
+                    vertex_count += 4;
+                },
+                DebugElement::Triangle { .. } => {
+                    index_count += 18;
+                    vertex_count += 12;
+                },
+                DebugElement::FillTriangle { .. } => {
+                    index_count += 3;
+                    vertex_count += 3;
                 }
             }
         }
@@ -63,6 +92,10 @@ impl DebugState {
         for &debug in self.elements.iter() {
             match debug {
                 DebugElement::Rect { .. } => state.generate_rect(debug),
+                DebugElement::FillRect { .. } => state.generate_fill_rect(debug),
+                DebugElement::Triangle { .. } => state.generate_triangle(debug),
+                DebugElement::FillTriangle { .. } => state.generate_fill_triangle(debug),
+                DebugElement::Point { ..  }=> state.generate_point(debug),
             }
         }
     }
@@ -80,7 +113,8 @@ impl<'a> GenerateMeshState<'a> {
 
     fn generate_rect(&mut self, element: DebugElement) {
         let (base, t, color) = match element {
-            DebugElement::Rect { base, line_thickness, color } => (base, line_thickness, color)
+            DebugElement::Rect { base, line_thickness, color, .. } => (base, line_thickness, color),
+            _ => unsafe { ::std::hint::unreachable_unchecked() }
         };
 
         // 0-----4
@@ -90,6 +124,10 @@ impl<'a> GenerateMeshState<'a> {
 
         let i = self.index_count;
         let v = self.vertex_count as u16;
+
+        assert!(self.index.len() >= i+24, "Index buffer is not large enough");
+        assert!(self.vertex.len() >= (v as usize)+8, "Vertex buffer is not large enough");
+
         self.index[i+0..i+6].copy_from_slice(&[v+0, v+5, v+4, v+0, v+1, v+5]);    // Top
         self.index[i+6..i+12].copy_from_slice(&[v+3, v+2, v+7, v+7, v+2, v+6]);   // Bottom
         self.index[i+12..i+18].copy_from_slice(&[v+0, v+2, v+1, v+1, v+2, v+3]);  // Left
@@ -108,6 +146,101 @@ impl<'a> GenerateMeshState<'a> {
 
         self.index_count += 24;
         self.vertex_count += 8;
+    }
+
+    fn generate_fill_rect(&mut self, element: DebugElement) {
+        let (base, color) = match element {
+            DebugElement::FillRect { base, color, .. } => (base, color),
+            _ => unsafe { ::std::hint::unreachable_unchecked() }
+        };
+
+        let i = self.index_count;
+        let v = self.vertex_count as u16;
+
+        assert!(self.index.len() >= i+6, "Index buffer is not large enough");
+        assert!(self.vertex.len() >= (v as usize)+4, "Vertex buffer is not large enough");
+
+        self.index[i+0..i+6].copy_from_slice(&[v+0, v+1, v+2, v+0, v+2, v+3]);
+
+        let v = self.vertex_count;
+        let [left, top, right, bottom] = base.splat();
+        self.vertex[v+0] = GpuDebugVertex { position: [left, top]    , color };
+        self.vertex[v+1] = GpuDebugVertex { position: [left, bottom] , color };
+        self.vertex[v+2] = GpuDebugVertex { position: [right, bottom]   , color };
+        self.vertex[v+3] = GpuDebugVertex { position: [right, top], color };
+
+        self.index_count += 6;
+        self.vertex_count += 4;
+    }
+
+    fn generate_triangle(&mut self, element: DebugElement) {
+        let (v0, v1, v2, color) = match element {
+            DebugElement::Triangle { v0, v1, v2, color } => (v0, v1, v2, color),
+            _ => unsafe { ::std::hint::unreachable_unchecked() }
+        };
+
+        self.generate_line_inner(v0, v1, color);
+        self.generate_line_inner(v1, v2, color);
+        self.generate_line_inner(v0, v2, color);
+    }
+
+    fn generate_fill_triangle(&mut self, element: DebugElement) {
+        let (v0, v1, v2, color) = match element {
+            DebugElement::FillTriangle { v0, v1, v2, color } => (v0, v1, v2, color),
+            _ => unsafe { ::std::hint::unreachable_unchecked() }
+        };
+
+        let i = self.index_count;
+        let v = self.vertex_count as u16;
+        
+        assert!(self.index.len() >= i+3, "Index buffer is not large enough");
+        assert!(self.vertex.len() >= (v as usize)+3, "Vertex buffer is not large enough");
+
+        self.index[i+0..i+3].copy_from_slice(&[v+0, v+1, v+2]);
+        
+        let v = self.vertex_count;
+        self.vertex[v+0] = GpuDebugVertex { position: v0.splat(), color };
+        self.vertex[v+1] = GpuDebugVertex { position: v1.splat(), color };
+        self.vertex[v+2] = GpuDebugVertex { position: v2.splat(), color };
+
+        self.index_count += 3;
+        self.vertex_count += 3;
+    }
+
+    fn generate_point(&mut self, element: DebugElement) {
+        let (pt, size, color) = match element {
+            DebugElement::Point { pt, size, color, .. } => (pt, size, color),
+            _ => unsafe { ::std::hint::unreachable_unchecked() }
+        };
+        
+        let base = AABB { left: pt.x - size, right: pt.x + size, top: pt.y - size, bottom: pt.y + size };
+        let fill = DebugElement::FillRect { base, color: color, _padding: [0; 8] };
+        self.generate_fill_rect(fill);
+    }
+
+    fn generate_line_inner(&mut self, p1: PositionF32, p2: PositionF32, color: [u8; 4]) {
+        const LINE_WIDTH: f32 = 1.0;
+
+        let angle = f32::atan2(p2.y-p1.y, p2.x-p1.x);
+        let y = LINE_WIDTH * f32::cos(angle);
+        let x = LINE_WIDTH* f32::sin(angle);
+
+        let i = self.index_count;
+        let v = self.vertex_count as u16;
+
+        assert!(self.index.len() >= i+6, "Index buffer is not large enough");
+        assert!(self.vertex.len() >= (v as usize)+4, "Vertex buffer is not large enough");
+
+        self.index[i+0..i+6].copy_from_slice(&[v+0, v+1, v+2, v+0, v+2, v+3]);
+
+        let v = self.vertex_count;
+        self.vertex[v+0] = GpuDebugVertex { position: [p1.x+x, p1.y-y],  color };
+        self.vertex[v+1] = GpuDebugVertex { position: [p1.x-x, p1.y+y],  color };
+        self.vertex[v+2] = GpuDebugVertex { position: [p2.x-x, p2.y+y],  color };
+        self.vertex[v+3] = GpuDebugVertex { position: [p2.x+x, p2.y-y],  color };
+
+        self.index_count += 6;
+        self.vertex_count += 4;
     }
 
 }
