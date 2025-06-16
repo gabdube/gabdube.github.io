@@ -13,6 +13,12 @@ impl PositionF32 {
     pub fn splat(&self) -> [f32; 2] {
         [self.x, self.y]
     }
+
+    pub fn distance(&self, other: PositionF32) -> f32 {
+        let x2 = other.x - self.x;
+        let y2 = other.y - self.y;
+        f32::sqrt(x2*x2 + y2*y2)
+    }
 }
 
 

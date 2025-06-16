@@ -1,5 +1,5 @@
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use crate::store::StoreLoad;
+use crate::{shared::AABB, store::StoreLoad};
 
 // This value is also hardcoded in the terrain shaders
 pub const TERRAIN_SPRITE_SIZE: f32 = 64.0;
@@ -34,6 +34,14 @@ impl Terrain {
 
     pub const fn height(&self) -> u32 {
         self.height
+    }
+
+    pub const fn rect(&self) -> AABB {
+        AABB { 
+            left: 0.0, top: 0.0,
+            right: self.width as f32 * TERRAIN_SPRITE_SIZE,
+            bottom: self.height as f32 * TERRAIN_SPRITE_SIZE
+        }
     }
 
 }

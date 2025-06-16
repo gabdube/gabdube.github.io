@@ -106,6 +106,7 @@ impl GameClient {
             Uninitialized => state::generation::init(self),
             Generation => state::generation::update(self),
             Navigation => state::navigation::update(self),
+            Pathfinding => state::pathfinding::update(self),
             FinalDemo => state::final_demo::update(self),
         }
 
@@ -147,11 +148,6 @@ impl GameClient {
     pub fn on_reload(&mut self) {
         self.data.clear_sprites();
         state::generation::init(self);
-
-        self.state.value = crate::state::GameStateValue::Navigation;
-        self.data.globals.debug_flags.0 |= crate::data::base::DebugFlags::SHOW_NAVMESH;
-        self.data.gui.set_debug_flags(self.data.globals.debug_flags);
-        self.data.gui.set_state(self.state.value, crate::state::GameInputType::Select);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {

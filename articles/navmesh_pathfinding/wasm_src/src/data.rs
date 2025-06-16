@@ -145,6 +145,10 @@ impl GameData {
         if debug_flags.show_navmesh() {
             self.navigation.debug_navmesh(debug, debug_flags.show_cell_centers());
         }
+
+        if debug_flags.show_pathfinding_graph() {
+            self.navigation.debug_pathfinding_graph(debug);
+        }
     }
 
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {

@@ -33,13 +33,23 @@ pub struct DebugFlags(pub u32);
 
 impl DebugFlags {
     pub const SHOW_NAVMESH: u32 = 0x1;
-    pub const SHOW_HOVERED_TRIANGLE: u32 = 0x2;
-    pub const SHOW_CELL_CENTERS: u32 = 0x4;
-    pub const SHOW_PATH: u32 = 0x8;
+    pub const SHOW_CELL_CENTERS: u32 = 0x2;
+    pub const SHOW_TRIANGLE_LOOKUP: u32 = 0x4;
+    pub const SHOW_TRIANGLE_LOOKUP_PATH: u32 = 0x8;
+    pub const SHOW_PATHFINDING_GRAPH: u32 = 0x10;
+    pub const SHOW_PATHFINDING_GRAPH_PATH: u32 = 0x20;
+    pub const SHOW_PATHFINDING_GRAPH_PATH_OPTIMIZED: u32 = 0x40;
 
     flags!(show_navmesh, Self::SHOW_NAVMESH);
     flags!(show_cell_centers, Self::SHOW_CELL_CENTERS);
-    flags!(show_hovered_triangle, Self::SHOW_HOVERED_TRIANGLE);
+    flags!(show_triangle_lookup, Self::SHOW_TRIANGLE_LOOKUP);
+    flags!(show_triangle_lookup_path, Self::SHOW_TRIANGLE_LOOKUP_PATH);
+    flags!(show_pathfinding_graph, Self::SHOW_PATHFINDING_GRAPH);
+
+    pub fn and(&mut self, value: u32) -> Self {
+        self.0 &= value;
+        *self
+    }
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]

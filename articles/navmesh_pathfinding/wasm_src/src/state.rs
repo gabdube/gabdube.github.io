@@ -1,5 +1,7 @@
+pub mod shared;
 pub mod generation;
 pub mod navigation;
+pub mod pathfinding;
 pub mod final_demo;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
@@ -13,6 +15,7 @@ pub enum GameStateValue {
     Uninitialized,
     Generation,
     Navigation,
+    Pathfinding,
     FinalDemo
 }
 
@@ -35,6 +38,7 @@ pub struct GameState {
     pub scroll_view: bool,
 }
 
+/// Propagates the events generated in the gui module to the other parts of the application
 pub fn propagate_gui_events(client: &mut GameClient) {
     let events = client.data.gui.events();
     for event in events {
@@ -52,9 +56,6 @@ pub fn propagate_gui_events(client: &mut GameClient) {
             GuiEvent::ResetWorld => {
                 client.data.clear_sprites();
                 client.data.compute_navigation();
-            },
-            GuiEvent::ResetPawnPosition => {
-
             },
         }
     }

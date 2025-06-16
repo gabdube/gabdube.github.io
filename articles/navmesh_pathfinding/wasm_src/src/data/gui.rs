@@ -13,7 +13,6 @@ pub enum GuiEvent {
     SetDebugFlags(DebugFlags),
     SetInputType(GameInputType),
     ResetWorld,
-    ResetPawnPosition,
 }
 
 /// Egui wrapper
@@ -67,6 +66,7 @@ impl Gui {
                 events: &mut self.events,
                 state: &mut self.game_state,
                 state_input: &mut self.game_input,
+                debug_flags: &mut self.debug_flags,
                 panel_width: left_panel_width,
             });
 
@@ -80,6 +80,7 @@ impl Gui {
                 match self.game_state {
                     GameStateValue::Generation => components::generation_panel(ui, params),
                     GameStateValue::Navigation => components::navigation_panel(ui, params),
+                    GameStateValue::Pathfinding => components::pathfinding_panel(ui, params),
                     GameStateValue::FinalDemo => components::final_panel(ui, params),
                     _ => {}
                 }

@@ -6,11 +6,12 @@ use crate::shared::{AABB, PositionF32};
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub enum DebugElement {
+    Point { pt: PositionF32, size: f32, color: [u8; 4], _padding: [u8; 12] },
+    Line { p0: PositionF32, p1: PositionF32, color: [u8; 4], _padding: [u8; 8] },
     Rect { base: AABB, line_thickness: f32, color: [u8; 4], _padding: [u8; 4] },
     FillRect { base: AABB, color: [u8; 4], _padding: [u8; 8] },
     Triangle { v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4] },
     FillTriangle { v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4] },
-    Point { pt: PositionF32, size: f32, color: [u8; 4], _padding: [u8; 12] },
 }
 
 #[derive(Default)]
@@ -33,15 +34,19 @@ impl DebugState {
     }
 
     pub fn draw_triangle(&mut self, v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Triangle { v0, v1, v2, color })
+        self.elements.push(DebugElement::Triangle { v0, v1, v2, color });
     }
 
     pub fn fill_triangle(&mut self, v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4]) {
-        self.elements.push(DebugElement::FillTriangle { v0, v1, v2, color })
+        self.elements.push(DebugElement::FillTriangle { v0, v1, v2, color });
     }
 
     pub fn draw_point(&mut self, pt: PositionF32, size: f32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Point { pt, size, color, _padding: [0; 12] })
+        self.elements.push(DebugElement::Point { pt, size, color, _padding: [0; 12] });
+    }
+
+    pub fn draw_line(&mut self, p0: PositionF32, p1: PositionF32, color: [u8; 4]) {
+        self.elements.push(DebugElement::Line { p0, p1, color, _padding: [0; 8] });
     }
 
     /// Returns [index_count, index_buffer_size, vertex_buffer_size] required to hold the current debug state
@@ -54,7 +59,7 @@ impl DebugState {
                     index_count += 24;
                     vertex_count += 8;
                 },
-                DebugElement::FillRect { .. } | DebugElement::Point { .. } => {
+                DebugElement::FillRect { .. } | DebugElement::Point { .. } | DebugElement::Line { .. } => {
                     index_count += 6;
                     vertex_count += 4;
                 },
@@ -91,11 +96,12 @@ impl DebugState {
 
         for &debug in self.elements.iter() {
             match debug {
+                DebugElement::Point { ..  }=> state.generate_point(debug),
+                DebugElement::Line { ..  }=> state.generate_line(debug),
                 DebugElement::Rect { .. } => state.generate_rect(debug),
                 DebugElement::FillRect { .. } => state.generate_fill_rect(debug),
                 DebugElement::Triangle { .. } => state.generate_triangle(debug),
                 DebugElement::FillTriangle { .. } => state.generate_fill_triangle(debug),
-                DebugElement::Point { ..  }=> state.generate_point(debug),
             }
         }
     }
@@ -218,10 +224,19 @@ impl<'a> GenerateMeshState<'a> {
         self.generate_fill_rect(fill);
     }
 
-    fn generate_line_inner(&mut self, p1: PositionF32, p2: PositionF32, color: [u8; 4]) {
+    fn generate_line(&mut self, element: DebugElement) {
+        let (p0, p1, color) = match element {
+            DebugElement::Line { p0, p1, color, .. } => (p0, p1, color),
+            _ => unsafe { ::std::hint::unreachable_unchecked() }
+        };
+
+        self.generate_line_inner(p0, p1, color);
+    }
+
+    fn generate_line_inner(&mut self, p0: PositionF32, p1: PositionF32, color: [u8; 4]) {
         const LINE_WIDTH: f32 = 1.0;
 
-        let angle = f32::atan2(p2.y-p1.y, p2.x-p1.x);
+        let angle = f32::atan2(p1.y-p0.y, p1.x-p0.x);
         let y = LINE_WIDTH * f32::cos(angle);
         let x = LINE_WIDTH* f32::sin(angle);
 
@@ -234,10 +249,10 @@ impl<'a> GenerateMeshState<'a> {
         self.index[i+0..i+6].copy_from_slice(&[v+0, v+1, v+2, v+0, v+2, v+3]);
 
         let v = self.vertex_count;
-        self.vertex[v+0] = GpuDebugVertex { position: [p1.x+x, p1.y-y],  color };
-        self.vertex[v+1] = GpuDebugVertex { position: [p1.x-x, p1.y+y],  color };
-        self.vertex[v+2] = GpuDebugVertex { position: [p2.x-x, p2.y+y],  color };
-        self.vertex[v+3] = GpuDebugVertex { position: [p2.x+x, p2.y-y],  color };
+        self.vertex[v+0] = GpuDebugVertex { position: [p0.x+x, p0.y-y],  color };
+        self.vertex[v+1] = GpuDebugVertex { position: [p0.x-x, p0.y+y],  color };
+        self.vertex[v+2] = GpuDebugVertex { position: [p1.x-x, p1.y+y],  color };
+        self.vertex[v+3] = GpuDebugVertex { position: [p1.x+x, p1.y-y],  color };
 
         self.index_count += 6;
         self.vertex_count += 4;
