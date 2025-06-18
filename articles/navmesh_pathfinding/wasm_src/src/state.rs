@@ -6,6 +6,7 @@ pub mod final_demo;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
 use crate::data::gui::GuiEvent;
+use crate::data::navigation::Triangle;
 use crate::GameClient;
 
 #[derive(Default, Debug, PartialEq, Eq, Copy, Clone, TryFromBytes, IntoBytes, Immutable)]
@@ -32,7 +33,10 @@ pub enum GameInputType {
 
 #[derive(Default, Copy, Clone)]
 pub struct GameState {
+    /// Only used while removing entities
     pub hovered_entity: Option<hecs::Entity>,
+    /// Only used when debugging pathfinding
+    pub hovered_cell: Triangle,
     pub input_type: GameInputType,
     pub value: GameStateValue,
     pub scroll_view: bool,
@@ -62,17 +66,21 @@ pub fn propagate_gui_events(client: &mut GameClient) {
 }
 
 pub fn common_inputs(game: &mut GameClient) {
-    let globals = &mut game.data.globals;
-    let state = &mut game.state;
-    
+    let globals = game.data.globals;
+
     if globals.middle_mouse_just_pressed() {
-        state.scroll_view = true;
+        game.state.scroll_view = true;
     } else if globals.middle_mouse_released() {
-        state.scroll_view = false;
+        game.state.scroll_view = false;
+    } 
+    
+    if globals.secondary_mouse_just_pressed() {
+        shared::secondary_mouse_actions(game);
     }
 
-    if state.scroll_view {
+    if game.state.scroll_view {
         if let Some(delta) = globals.mouse_delta() {
+            let globals = &mut game.data.globals;
             globals.view_offset -= delta;
             globals.flags.set_update_view_offset();
         }
@@ -82,6 +90,7 @@ pub fn common_inputs(game: &mut GameClient) {
 impl crate::store::StoreLoad for GameState {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
         writer.write_entity_option(self.hovered_entity);
+        writer.write(&self.hovered_cell);
         writer.write(&self.input_type);
         writer.write(&self.value);
         writer.write_bool(self.scroll_view);
@@ -91,6 +100,7 @@ impl crate::store::StoreLoad for GameState {
         let mut state = GameState::default();
 
         state.hovered_entity = reader.try_read_entity_option()?;
+        state.hovered_cell = reader.try_read()?;
         state.input_type = reader.try_read()?;
         state.value = reader.try_read()?;
         state.scroll_view = reader.try_read_bool()?;

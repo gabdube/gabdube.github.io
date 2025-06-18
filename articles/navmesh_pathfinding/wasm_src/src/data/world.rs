@@ -111,6 +111,15 @@ impl World {
         self.inner.query::<(&BaseSprite, &HasCollision)>()
     }
 
+    pub fn selected_sprites(&self) -> &Vec<Entity> {
+        &self.selected_sprites
+    }
+
+    pub fn get_pawn(&mut self, entity: Entity) -> Option<BaseSprite> {
+        self.inner.query_one_mut::<(&IsPawn, &BaseSprite)>(entity).ok()
+            .map(|(_, sprite)| *sprite )
+    }
+
     pub(super) fn add_pawn(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
         let sprites = BaseSprite {
             position,
@@ -144,7 +153,7 @@ impl World {
         self.inner.spawn((IsCastle, HasCollision, sprites))
     }
 
-    /// Order all sprites in the world by their y components
+    /// Order all sprites in the world by their y component
     /// Optionally advance the animation if `animate` is true
     pub fn order_sprites(&mut self, animate: bool) -> usize {
         use std::cmp::Ordering;

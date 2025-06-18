@@ -149,11 +149,11 @@ footer > p {
 body.article {
     display: grid;
     grid-template-rows: [header] 70px [main] max(300px, calc(100vh - 100px)) [footer] 30px;
-    grid-template-columns: [article] calc(55% - 5px) [separator] 5px [canvas] 45%;
+    grid-template-columns: [article] 55% [canvas] 45%;
 }
 
 body.article.focus {
-    grid-template-columns: [article] 100% [separator] 0px [canvas] 0px;
+    grid-template-columns: [article] 100% [canvas] 0px;
 }
 
 body.article > header {
@@ -165,12 +165,12 @@ body.article > header {
 body.article > main {
     grid-row-start: main;
     grid-column-start: article;
-    grid-column-end: separator;
+    grid-column-end: canvas;
+    overflow-y: auto;
 }
 
 body.article > main > #content {
     height: 100%;
-    overflow-y: auto;
     line-height: 1.7em;
     padding: 0 20px;
     max-width: 1000px;
@@ -181,17 +181,6 @@ body.article > footer {
     grid-row-start: footer;
     grid-column-start: article;
     grid-column-end: -1;
-}
-
-body.article > #separator {
-    width: 5px;
-    background-color: #365295;
-    flex-shrink: 0;
-
-    grid-column-start: separator;
-    grid-column-end: canvas;
-    grid-row-start: main;
-    grid-row-end: footer;
 }
 
 body.article > #demo {
@@ -208,12 +197,7 @@ body.article > #demo {
 
 @media (max-width: 999px) {
     body.article {
-        grid-template-columns: [article] 100% [separator] 0px [canvas] 0px;
-    }
-
-    body.article > #separator {
-        width: 0px;
-        height: 0px;
+        grid-template-columns: [article] 100% [canvas] 0px;
     }
 
     body.article > #demo {

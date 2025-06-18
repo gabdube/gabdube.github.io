@@ -1,6 +1,10 @@
+#![allow(dead_code)]
+
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
 use crate::output::GpuDebugVertex;
 use crate::shared::{AABB, PositionF32};
+
+const MAX_LAYER: usize = 2;
 
 #[derive(Copy, Clone, Immutable, IntoBytes, TryFromBytes)]
 #[repr(C)]
@@ -14,62 +18,77 @@ pub enum DebugElement {
     FillTriangle { v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4] },
 }
 
-#[derive(Default)]
 pub struct DebugState {
-    elements: Vec<DebugElement>,
+    /// Current layer in which the next elements will be added
+    current_layer: usize,
+
+    /// Collections of debug elements. One for each layer
+    /// Elements at collection 0 are rendered first, then the others are renderered on top
+    layers: Vec<Vec<DebugElement>>,
 }
 
 impl DebugState {
 
     pub fn any(&self) -> bool {
-        self.elements.len() > 0
+        self.layers.iter().any(|layer| !layer.is_empty() )
+    }
+
+    pub fn set_current_layer(&mut self, layer: usize) {
+        assert!(layer < MAX_LAYER, "There should be no need to have more than two layers for now");
+        self.current_layer = layer;
     }
 
     pub fn clear(&mut self) {
-        self.elements.clear();
+        self.current_layer = 0;
+        for layer in self.layers.iter_mut() {
+            layer.clear();
+        }
     }
 
     pub fn draw_rect(&mut self, rect: AABB, line_thickness: f32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Rect { base: rect, line_thickness, color, _padding: [0; 4] });
+        self.layers[self.current_layer].push(DebugElement::Rect { base: rect, line_thickness, color, _padding: [0; 4] });
     }
 
     pub fn draw_triangle(&mut self, v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Triangle { v0, v1, v2, color });
+        self.layers[self.current_layer].push(DebugElement::Triangle { v0, v1, v2, color });
     }
 
     pub fn fill_triangle(&mut self, v0: PositionF32, v1: PositionF32, v2: PositionF32, color: [u8; 4]) {
-        self.elements.push(DebugElement::FillTriangle { v0, v1, v2, color });
+        self.layers[self.current_layer].push(DebugElement::FillTriangle { v0, v1, v2, color });
     }
 
     pub fn draw_point(&mut self, pt: PositionF32, size: f32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Point { pt, size, color, _padding: [0; 12] });
+        self.layers[self.current_layer].push(DebugElement::Point { pt, size, color, _padding: [0; 12] });
     }
 
     pub fn draw_line(&mut self, p0: PositionF32, p1: PositionF32, color: [u8; 4]) {
-        self.elements.push(DebugElement::Line { p0, p1, color, _padding: [0; 8] });
+        self.layers[self.current_layer].push(DebugElement::Line { p0, p1, color, _padding: [0; 8] });
     }
 
     /// Returns [index_count, index_buffer_size, vertex_buffer_size] required to hold the current debug state
     pub fn buffers_sizes(&self) -> [usize; 3] {
         let mut index_count = 0usize;
         let mut vertex_count = 0usize;
-        for debug in self.elements.iter() {
-            match debug {
-                DebugElement::Rect { .. } => {
-                    index_count += 24;
-                    vertex_count += 8;
-                },
-                DebugElement::FillRect { .. } | DebugElement::Point { .. } | DebugElement::Line { .. } => {
-                    index_count += 6;
-                    vertex_count += 4;
-                },
-                DebugElement::Triangle { .. } => {
-                    index_count += 18;
-                    vertex_count += 12;
-                },
-                DebugElement::FillTriangle { .. } => {
-                    index_count += 3;
-                    vertex_count += 3;
+
+        for layer in self.layers.iter() {
+            for debug in layer.iter() {
+                match debug {
+                    DebugElement::Rect { .. } => {
+                        index_count += 24;
+                        vertex_count += 8;
+                    },
+                    DebugElement::FillRect { .. } | DebugElement::Point { .. } | DebugElement::Line { .. } => {
+                        index_count += 6;
+                        vertex_count += 4;
+                    },
+                    DebugElement::Triangle { .. } => {
+                        index_count += 18;
+                        vertex_count += 12;
+                    },
+                    DebugElement::FillTriangle { .. } => {
+                        index_count += 3;
+                        vertex_count += 3;
+                    }
                 }
             }
         }
@@ -93,15 +112,16 @@ impl DebugState {
             index,
             vertex
         };
-
-        for &debug in self.elements.iter() {
-            match debug {
-                DebugElement::Point { ..  }=> state.generate_point(debug),
-                DebugElement::Line { ..  }=> state.generate_line(debug),
-                DebugElement::Rect { .. } => state.generate_rect(debug),
-                DebugElement::FillRect { .. } => state.generate_fill_rect(debug),
-                DebugElement::Triangle { .. } => state.generate_triangle(debug),
-                DebugElement::FillTriangle { .. } => state.generate_fill_triangle(debug),
+        for layer in self.layers.iter() {
+            for &debug in layer.iter() {
+                match debug {
+                    DebugElement::Point { ..  }=> state.generate_point(debug),
+                    DebugElement::Line { ..  }=> state.generate_line(debug),
+                    DebugElement::Rect { .. } => state.generate_rect(debug),
+                    DebugElement::FillRect { .. } => state.generate_fill_rect(debug),
+                    DebugElement::Triangle { .. } => state.generate_triangle(debug),
+                    DebugElement::FillTriangle { .. } => state.generate_fill_triangle(debug),
+                }
             }
         }
     }
@@ -260,3 +280,17 @@ impl<'a> GenerateMeshState<'a> {
 
 }
 
+//
+// Other impls
+//
+
+impl Default for DebugState {
+    fn default() -> Self {
+        let mut layers = Vec::new();
+        for _ in 0..MAX_LAYER {
+            layers.push(Vec::new());
+        }
+
+        DebugState { current_layer: 0, layers }
+    }
+}

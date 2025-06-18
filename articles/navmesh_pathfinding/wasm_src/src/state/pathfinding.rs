@@ -1,10 +1,11 @@
+use crate::shared::PositionF32;
 use crate::GameClient;
 use super::common_inputs;
 
 pub fn update(game: &mut GameClient) {
     common_inputs(game);
 
-    let globals = &game.data.globals;
+    let globals = game.data.globals;
 
     if globals.primary_mouse_just_pressed() {
         if game.data.gui.position_outside_gui(globals.mouse_position) {
@@ -14,4 +15,30 @@ pub fn update(game: &mut GameClient) {
         }
     }
 
+    if game.data.world.selected_sprites().len() > 0 {
+        if globals.debug_flags.debug_any_path() {
+            debug_pathfinding(game);
+        }
+    }
+}
+
+fn selected_pawn_position(world: &mut crate::data::world::World) -> Option<PositionF32> {
+    // Only one item can be selected at a time in this demo
+    world.selected_sprites().first().copied()
+        .and_then(|entity| world.get_pawn(entity) )
+        .map(|sprite| sprite.base_position() )
+}
+
+fn debug_pathfinding(game: &mut GameClient) {
+    let globals = game.data.globals;
+    let nav = &game.data.navigation;
+    let debug = &mut game.data.debug;
+
+    if let Some(start) = selected_pawn_position(&mut game.data.world) {
+        let end = globals.mouse_position - globals.view_offset;
+        match globals.debug_flags.show_path_rough() {
+            true => nav.debug_rough_path(debug, start, end),
+            false => nav.debug_path(debug, start, end),
+        }
+    }
 }

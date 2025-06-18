@@ -46,6 +46,7 @@ pub struct GlobalParams {
 
 impl GlobalParams {
     pub fn primary_mouse_just_pressed(&self) -> bool { self.mouse_buttons[0].just_pressed() }
+    pub fn secondary_mouse_just_pressed(&self) -> bool { self.mouse_buttons[1].just_pressed() }
     pub fn middle_mouse_just_pressed(&self) -> bool { self.mouse_buttons[2].just_pressed() }
     pub fn middle_mouse_released(&self) -> bool { self.mouse_buttons[2].released() }
     pub fn mouse_moved(&self) -> bool {

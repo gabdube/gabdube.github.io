@@ -103,7 +103,7 @@ impl GameClient {
         self.data.prepare_update(time);
 
         match self.state.value {
-            Uninitialized => state::generation::init(self),
+            Uninitialized => state::final_demo::init(self),
             Generation => state::generation::update(self),
             Navigation => state::navigation::update(self),
             Pathfinding => state::pathfinding::update(self),
@@ -147,7 +147,7 @@ impl GameClient {
 impl GameClient {
     pub fn on_reload(&mut self) {
         self.data.clear_sprites();
-        state::generation::init(self);
+        state::final_demo::init(self);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {

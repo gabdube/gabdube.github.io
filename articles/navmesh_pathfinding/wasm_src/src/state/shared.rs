@@ -68,6 +68,16 @@ pub(super) fn primary_mouse_actions(game: &mut GameClient) {
     }
 }
 
+pub(super) fn secondary_mouse_actions(game: &mut GameClient) {
+    let world = &mut game.data.world;
+    let selected_pawn = world.selected_sprites().first().copied()
+        .and_then(|entity| world.get_pawn(entity) );
+
+    if let Some(selected_pawn) = selected_pawn {
+        dbg!("TODO move pawn");
+    }
+}
+
 pub(super) fn mouse_moved_actions(game: &mut GameClient) {
     match game.state.input_type {
         GameInputType::Delete => {
