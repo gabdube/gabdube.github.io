@@ -25,9 +25,12 @@ pub fn init(game: &mut GameClient) {
     data.compute_navigation();
     
     game.state.value = GameStateValue::Pathfinding;
-    game.data.globals.debug_flags.0 |= DebugFlags::SHOW_NAVMESH | DebugFlags::SHOW_PATH_ROUGH;
+    game.data.globals.debug_flags.0 = DebugFlags::SHOW_NAVMESH | DebugFlags::SHOW_PATH_FUNNEL;
     game.data.gui.set_debug_flags(game.data.globals.debug_flags);
     game.data.gui.set_state(game.state.value, GameInputType::Select);
+
+    game.data.world.order_sprites(false);
+    game.data.world.select_sprite_at_position(pos(450.0, 130.0));
 }
 
 

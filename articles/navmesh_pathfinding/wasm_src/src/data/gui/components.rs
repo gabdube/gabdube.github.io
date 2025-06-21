@@ -103,8 +103,9 @@ pub fn pathfinding_panel(ui: &mut egui::Ui, params: PanelParams) {
     ui.vertical(|ui| {
         bitflag_checkbox(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH, 0, DebugFlags::SHOW_CELL_CENTERS);
         bitflag_checkbox(ui, params.events, "Show pathfinding graph", params.debug_flags, DebugFlags::SHOW_PATHFINDING_GRAPH, 0, 0);
-        bitflag_checkbox2(ui, params.events, "Debug rough pathfinding", params.debug_flags, DebugFlags::SHOW_PATH_ROUGH, DebugFlags::SHOW_PATH);
-        bitflag_checkbox2(ui, params.events, "Debug pathfinding", params.debug_flags, DebugFlags::SHOW_PATH, DebugFlags::SHOW_PATH_ROUGH);
+        bitflag_checkbox2(ui, params.events, "Debug pathfinding", params.debug_flags, DebugFlags::SHOW_PATH_ROUGH, DebugFlags::SHOW_PATH | DebugFlags::SHOW_PATH_FUNNEL);
+        bitflag_checkbox2(ui, params.events, "Debug pathfinding funnel", params.debug_flags, DebugFlags::SHOW_PATH_FUNNEL, DebugFlags::SHOW_PATH | DebugFlags::SHOW_PATH_ROUGH);
+        bitflag_checkbox2(ui, params.events, "Debug pathfinding (smoothed)", params.debug_flags, DebugFlags::SHOW_PATH, DebugFlags::SHOW_PATH_ROUGH | DebugFlags::SHOW_PATH_FUNNEL);
     });
 }
 

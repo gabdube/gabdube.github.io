@@ -23,9 +23,12 @@
         <p>Pathfinding is complex. Most game engine already provide generic solutions that handle all the messy parts for you. However, if you are building your own engine, this is something you will have to code (mostly) from scratch.</p>
         <p>The good news is there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
         <p>The bad news is... theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
-        <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding library, from building the navmesh to generating the final path. Using Rust of course.</p>
+        <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh to generating the final path. Using Rust of course.</p>
         <p>(Note that the interactive demo will only be visible if your screen is >= 1000px)</p>
-        <p>The code for this demo is available on github <a href="https://github.com/gabdube/gabdube.github.io/tree/master/articles/navmesh_pathfinding" target="_blank">HERE</a></p>
+        <p>
+          The code for this demo is available on github <a href="https://github.com/gabdube/gabdube.github.io/tree/master/articles/navmesh_pathfinding" target="_blank">HERE</a> and all of the pathfinding logic
+          is in <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs" target="_blank">THIS</a> file
+        </p>
       </div>
 
       <div>
@@ -42,18 +45,61 @@
       <div>
         <p>Special thanks to:</p>
         <ul>
-          <li><a href="https://www.redblobgames.com/">Red Blob Games</a>: For the best A* Algorithm guide available online</li>
+          <li><a href="https://www.redblobgames.com/pathfinding/a-star/implementation.html">Red Blob Games</a>: For the best A* Algorithm guide available online</li>
           <li><a href="https://pixelfrog-assets.itch.io/">PixelFrog</a>: For the amazing assets used in this article</li>
           <li><a href="https://github.com/mapbox/delaunator">Delaunator</a>: The great library that handles the delaunay triangulation</li>
           <li><a href="https://github.com/mourner/delaunator-rs">Delaunator-rs</a>: The rust port of delaunator</li>
+          <li><a href="https://digestingduck.blogspot.com/2010/03/simple-stupid-funnel-algorithm.html">Simple stupid funnel algorithm</a>: For the path smoothing algorithm</li>
         </ul>
       </div>
 
       <hr class="article-separator">
+
+      <div>
+        <h3 id="hTriangulate" class="article-h"><a href="#hTriangulate">Using delaunay triangulation to generate the base navmesh</a></h2>
+          
+        <p>
+
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h3 id="hFindTriangle" class="article-h"><a href="#hFindTriangle">Finding in which cell a point is</a></h2>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h3 id="hGenerateGraph" class="article-h"><a href="#hGenerateGraph">Generate a graph</a></h2>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h3 id="hRemoveNodes" class="article-h"><a href="#hRemoveNodes">Removing blocked nodes from the graph</a></h2>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h3 id="hAStarCompute" class="article-h"><a href="#hAStarCompute">Using A* to compute the optimal path between two cells</a></h2>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h3 id="hOptimizePath" class="article-h"><a href="#hOptimizePath">Optimizing the path using the Simple Stupid Funnel Algorithm</a></h2>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h3 id="hLimitation" class="article-h"><a href="#hLimitation">Limitations & steps forward</a></h2>
+      </div>
     </div>
-    
   </main>
-  <div id="separator"></div>
   <div id="demo">
     <canvas id="canvas"></canvas>
   </div>

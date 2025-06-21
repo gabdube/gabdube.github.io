@@ -38,13 +38,15 @@ impl DebugFlags {
     pub const SHOW_TRIANGLE_LOOKUP_PATH: u32 = 0x8;
     pub const SHOW_PATHFINDING_GRAPH: u32 = 0x10;
     pub const SHOW_PATH_ROUGH: u32 = 0x20;
-    pub const SHOW_PATH: u32 = 0x40;
+    pub const SHOW_PATH_FUNNEL: u32 = 0x40;
+    pub const SHOW_PATH: u32 = 0x80;
 
     flags!(show_navmesh, Self::SHOW_NAVMESH);
     flags!(show_cell_centers, Self::SHOW_CELL_CENTERS);
     flags!(show_triangle_lookup, Self::SHOW_TRIANGLE_LOOKUP);
     flags!(show_triangle_lookup_path, Self::SHOW_TRIANGLE_LOOKUP_PATH);
     flags!(show_pathfinding_graph, Self::SHOW_PATHFINDING_GRAPH);
+    flags!(show_path_funnel, Self::SHOW_PATH_FUNNEL);
     flags!(show_path_rough, Self::SHOW_PATH_ROUGH);
 
     pub fn and(&mut self, value: u32) -> Self {
@@ -53,7 +55,7 @@ impl DebugFlags {
     }
 
     pub fn debug_any_path(&self) -> bool {
-        self.0 & (Self::SHOW_PATH_ROUGH | Self::SHOW_PATH) > 0
+        self.0 & (Self::SHOW_PATH_ROUGH | Self::SHOW_PATH_FUNNEL | Self::SHOW_PATH) > 0
     }
 }
 

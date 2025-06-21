@@ -28,9 +28,10 @@ struct StepState {
 }
 
 /// One of the three possible neighbors of a NavNode
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes)]
+#[derive(Debug, Copy, Clone, FromBytes, Immutable, IntoBytes)]
 struct NavNodeNeighbor {
     pub center: PositionF32,
+    pub segment: [PositionF32; 2],
     pub triangle: Triangle,
     pub distance: f32,
 }
@@ -40,7 +41,7 @@ impl NavNodeNeighbor {
 }
 
 /// A node in the pathfinding graph
-#[derive(Copy, Clone, Default, FromBytes, Immutable, IntoBytes)]
+#[derive(Debug, Copy, Clone, Default, FromBytes, Immutable, IntoBytes)]
 struct NavNode {
     pub triangle: Triangle,
     pub center: PositionF32,
@@ -52,6 +53,19 @@ struct NavNode {
 impl NavNode {
     pub const fn is_disconnected(&self) -> bool { 
         self.n0.triangle.is_outside() && self.n1.triangle.is_outside() && self.n2.triangle.is_outside()
+    }
+
+    pub fn gate(&self, from: usize) -> [PositionF32; 2] {
+        let triangle = Triangle(from as u32);
+        if self.n0.triangle == triangle {
+            self.n0.segment
+        } else if self.n1.triangle == triangle {
+            self.n1.segment
+        } else if self.n2.triangle == triangle {
+            self.n2.segment
+        } else {
+            Default::default()
+        }
     }
 }
 
@@ -71,7 +85,13 @@ struct PathComputeNode {
 struct PathComputeNodeParent {
     pub index: usize,
     pub parent_index: usize,
+    pub gate: [PositionF32; 2],
     pub cost_to_start: f32,
+}
+
+enum PathfindingOutput<'a> {
+    Gates(&'a mut Vec<[PositionF32; 2]>),
+    Nodes(&'a mut Vec<PathComputeNodeParent>)
 }
 
 
@@ -141,70 +161,77 @@ impl NavigationState {
             None => { return; }
         };
 
-        let edges_count = triangulation.triangles.len();
-        let mut i = 0;
-
-        while i < edges_count {
+        let points = &self.points;
+        let triangle_count = triangulation.triangles.len() / 3;
+        
+        for i in 0..triangle_count {
             let mut node = NavNode::default();
-            node.triangle = self.triangle_of_edge(i);
+            node.triangle = Triangle(i as u32);
 
-            let mut p0 = self.points[triangulation.triangles[i]];
-            let mut p1 = self.points[triangulation.triangles[i+1]];
-            let mut p2 = self.points[triangulation.triangles[i+2]];
+            // Edges of the current triangle
+            let e0 = i * 3;
+            let e1 = e0 + 1;
+            let e2 = e0 + 2;
+
+            let mut p0 = points[triangulation.triangles[e0]];
+            let mut p1 = points[triangulation.triangles[e1]];
+            let mut p2 = points[triangulation.triangles[e2]];
             let center_start = pos((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
             let mut center_stop;
 
             node.center = center_start;
 
+            // Edges of the neighbors triangle
             let mut e3;
             let mut e4;
             let mut e5;
 
-            e3 = triangulation.halfedges[i];
+            e3 = triangulation.halfedges[e0];
             if e3 != usize::MAX {
                 e4 = delaunator::next_halfedge(e3);
                 e5 = delaunator::next_halfedge(e4);
-                p0 = self.points[triangulation.triangles[e3]];
-                p1 = self.points[triangulation.triangles[e4]];
-                p2 = self.points[triangulation.triangles[e5]];
+                p0 = points[triangulation.triangles[e3]];
+                p1 = points[triangulation.triangles[e4]];
+                p2 = points[triangulation.triangles[e5]];
                 center_stop = pos((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
 
                 node.n0.triangle = self.triangle_of_edge(e3);
                 node.n0.distance = center_start.distance(center_stop);
                 node.n0.center = center_stop;
+                node.n0.segment = [p0, p1];
             }
 
-            e3 = triangulation.halfedges[i+1];
+            e3 = triangulation.halfedges[e1];
             if e3 != usize::MAX {
                 e4 = delaunator::next_halfedge(e3);
                 e5 = delaunator::next_halfedge(e4);
-                p0 = self.points[triangulation.triangles[e3]];
-                p1 = self.points[triangulation.triangles[e4]];
-                p2 = self.points[triangulation.triangles[e5]];
+                p0 = points[triangulation.triangles[e3]];
+                p1 = points[triangulation.triangles[e4]];
+                p2 = points[triangulation.triangles[e5]];
                 center_stop = pos((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
                 
                 node.n1.triangle = self.triangle_of_edge(e3);
                 node.n1.distance = center_start.distance(center_stop);
                 node.n1.center = center_stop;
+                node.n1.segment = [p0, p1];
             }
 
-            e3 = triangulation.halfedges[i+2];
+            e3 = triangulation.halfedges[e2];
             if e3 != usize::MAX {
                 e4 = delaunator::next_halfedge(e3);
                 e5 = delaunator::next_halfedge(e4);
-                p0 = self.points[triangulation.triangles[e3]];
-                p1 = self.points[triangulation.triangles[e4]];
-                p2 = self.points[triangulation.triangles[e5]];
+                p0 = points[triangulation.triangles[e3]];
+                p1 = points[triangulation.triangles[e4]];
+                p2 = points[triangulation.triangles[e5]];
                 center_stop = pos((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
                 
                 node.n2.triangle = self.triangle_of_edge(e3);
                 node.n2.distance = center_start.distance(center_stop);
                 node.n2.center = center_stop;
+                node.n2.segment = [p0, p1];
             }
 
             self.graph.push(node);
-
-            i += 3;
         }
     }
 
@@ -242,7 +269,7 @@ impl NavigationState {
             }
         }
 
-        // Brute force the removal of nodes from graph There are better way to handle this.
+        // Brute force algorithm. There are better way to handle this.
         // For example by querying the triangle inside the blocked area using `triangle_at`
         for blocked_index in 0..blocked_area_count {
             let blocked = self.blocked_areas[blocked_index];
@@ -345,13 +372,14 @@ impl NavigationState {
         Compute a rough (without smoothing) path from start to end using the A* algorithm. Returns `true` if a path was found or returns `false` otherwise.
         Panics if `start` and `end` are in the same triangle (the case should be handled by the caller).
 
-        Writes the nodes to walk through in `output` if successful
+        Either writes writes the nodes to walk through or the gates (edges the actor will have to go through) in output
+        `PathfindingOutput::Gates` is used by the final algorithm and `PathfindingOutput::Nodes` is used for debugging purpose.
     */
     fn compute_rough_path(
         &self,
         start_node_index: usize,
         end_node_index: usize,
-        output: &mut Vec<PathComputeNodeParent>
+        output: PathfindingOutput
     ) -> bool {
         use std::collections::{BinaryHeap, HashMap, hash_map::Entry};
 
@@ -362,36 +390,55 @@ impl NavigationState {
         fn build_final_path(
             end_node_index: usize,
             processed: &mut HashMap<usize, PathComputeNodeParent>,
-            output: &mut Vec<PathComputeNodeParent>
+            mut output: PathfindingOutput
         ) {
             let mut next = end_node_index;
             loop {
                 let current = processed.get(&next).copied()
-                    .unwrap_or(PathComputeNodeParent { index: next, parent_index: next, cost_to_start: 0.0 }); // Unwrap should never be reached
+                    .unwrap_or(PathComputeNodeParent { index: next, parent_index: next, gate: Default::default(), cost_to_start: 0.0 }); // Unwrap should never be reached
+                
                 if current.index == current.parent_index {
                     break; // First node loop with itself
                 }
 
-                output.push(current);
+                match &mut output {
+                    PathfindingOutput::Gates(gates) => { gates.push(current.gate); },
+                    PathfindingOutput::Nodes(nodes) => { nodes.push(current); }
+                }
+
                 next = current.parent_index;
             }
 
             // We need to reverse the path because it was built from the last node to the first
-            output.reverse();
+            match &mut output {
+                PathfindingOutput::Gates(gates) => gates.reverse(),
+                PathfindingOutput::Nodes(nodes) => nodes.reverse(),
+            }
         }
 
         // A list of processed nodes that stores the cost to reach that node and the index of the parent node
+        // Nodes can be walked back to build the final path (see `build_final_path`)
         let mut processed: HashMap<usize, PathComputeNodeParent> = HashMap::new();
 
         // A Priority queue to process the nodes from the smallest cost to the largest
         let mut to_see: BinaryHeap<PathComputeNode> = BinaryHeap::new();
 
         to_see.push(PathComputeNode { node_index: start_node_index, cost_to_start: 0.0, estimated_cost_to_end: 0.0, came_from: 3 });
-        processed.insert(start_node_index, PathComputeNodeParent { index: start_node_index, parent_index: start_node_index, cost_to_start: 0.0 });
+        processed.insert(start_node_index, PathComputeNodeParent { index: start_node_index, parent_index: start_node_index, gate: Default::default(), cost_to_start: 0.0 });
 
         while let Some(cell) = to_see.pop() {
             if cell.node_index == end_node_index {
-                build_final_path(cell.came_from, &mut processed, output);
+                // Last node
+                let gate = self.graph[cell.came_from].gate(cell.node_index);
+                processed.insert(cell.node_index, PathComputeNodeParent { 
+                    index: cell.node_index,
+                    parent_index: cell.came_from,
+                    gate,
+                    cost_to_start: 0.0 
+                });
+
+                build_final_path(cell.node_index, &mut processed, output);
+
                 return true;
             }
 
@@ -405,7 +452,7 @@ impl NavigationState {
 
                 let next_node_index = next.as_graph_node_index();
                 let new_cost = cell.cost_to_start + next.distance;
-                let parent_value = PathComputeNodeParent { index: next_node_index, parent_index: cell.node_index, cost_to_start: new_cost };
+                let parent_value = PathComputeNodeParent { index: next_node_index, parent_index: cell.node_index, gate: next.segment, cost_to_start: new_cost };
                 match processed.entry(next_node_index) {
                     Entry::Vacant(e) => {
                         e.insert(parent_value);
@@ -432,6 +479,146 @@ impl NavigationState {
         return false;
     }
 
+    // Funnel algorithm
+    fn compute_funnel(
+        &self,
+        start: PositionF32,
+        end: PositionF32,
+        gates: &[[PositionF32; 2]],
+        output: &mut Vec<PositionF32>,
+    ) {
+        /// By computing the cross product of the apex, the opposite point, and the new point we can find
+        /// if moving one side would tighten the funnel (if the cross product returns a smaller value)
+        fn cross_product(apex: PositionF32, a: PositionF32, b: PositionF32) -> f32 {
+            let ax = a.x - apex.x;
+            let ay = a.y - apex.y;
+            let bx = b.x - apex.x;
+            let by = b.y - apex.y;
+
+            // dbg!("cross {:?} {:?} {:?} = {}", apex, a, b,  bx*ay - ax*by);
+
+            bx*ay - ax*by
+        }
+
+        assert!(gates.len() >= 1, "Funnel algorithm requires that rough_output contains at least one node");
+
+        // Path always begins with the start node
+        output.push(start);
+
+        let mut apex = start;
+        let mut right_index = 0;
+        let mut left_index = 0;
+        let [mut left, mut right] = gates.first().map(|[left, right]| [*left, *right] ).unwrap();
+
+        let gates_count = gates.len();
+        let mut gate_index = 1;
+        let mut iter_count = 0;
+        while gate_index < gates_count {
+            let new_right = gates[gate_index][1];
+            let new_left = gates[gate_index][0];
+
+            if iter_count == 10 {
+                break;
+            }
+            iter_count += 1;
+
+            // Right vertex
+            // cross_product will return >= 0 if moving the `right` point to `new_right` would tighten the funnel
+            if cross_product(apex, right, new_right) >= 0.0 {
+                // cross_product of `apex`, `left`, and `new_right` checks if the funnel degenerates to a line segment
+                if right == apex || cross_product(apex, left, new_right) < 0.0 { 
+                    // If it doesn't we move the funnel point
+                    right_index = gate_index;
+                    right = new_right;
+                } else {
+                    // If the funnel degenerates to a line segment. We need to move the apex to the current opposite point (left in this case)
+                    // The new apex will a point in the path.
+                    
+                    // Insert pivot point
+                    output.push(left);
+
+                    // Resets loop at gate index
+                    right_index = left_index;
+                    gate_index = left_index+1;
+
+                    // Update apex & reset gates
+                    apex = left;
+                    left = apex;
+                    right = apex;
+
+                    continue;
+                }
+            }
+
+            // Left vertex
+            // cross_product will return <= 0 if moving the `left` point to `new_left` would tighten the funnel
+            if cross_product(apex, left, new_left) <= 0.0 {
+                if left == apex || cross_product(apex, right, new_left) > 0.0 {
+                    left_index = gate_index;
+                    left = new_left;
+                } else {
+                    output.push(right);
+                    
+                    left_index = right_index;
+                    gate_index = right_index+1;
+
+                    apex = right;
+                    right = apex;
+                    left = apex;
+
+                    continue;
+                }
+            }
+
+            gate_index += 1;
+        }
+
+        // Process the path to the `end` node.
+        loop {
+            if right_index >= gates_count && left_index >= gates_count {
+                break;
+            } else {
+                if left_index < gates_count {
+                    left = gates[left_index][0];
+                }
+
+                if right_index < gates_count {
+                    right = gates[right_index][1];
+                }
+            }
+            
+            if apex != right && cross_product(apex, left, end) > 0.0 { 
+                output.push(left);
+                apex = left;
+
+                left_index +=1;
+                right_index = left_index;
+    
+                continue;
+            } else {
+                right_index += 1;
+            }
+        
+            if apex != left && cross_product(apex, right, end) < 0.0 {
+                output.push(right);
+                apex = right;
+
+                right_index +=1;
+                left_index = right_index;
+
+                continue;
+            } else {
+                left_index += 1;
+            }
+        }
+
+        // Path always ends with the end node
+        output.push(end);
+    }
+
+    /**
+        Compute and optimize the path between `start` and `end`. Returns a vector of points the actor at `start` will move through to reach `end`
+    */
     fn compute_path(&self, start: PositionF32, end: PositionF32, output: &mut Vec<PositionF32>) -> bool {
         let [start_node_index, end_node_index] = match self.get_pathfinding_nodes(start, end) {
             Some([start, end]) => [start, end],
@@ -445,7 +632,14 @@ impl NavigationState {
             return true;
         }
 
-        false
+        let mut gates = Vec::with_capacity(16);
+        if !self.compute_rough_path(start_node_index, end_node_index, PathfindingOutput::Gates(&mut gates)) {
+            return false;
+        }
+
+        self.compute_funnel(start, end, &mut gates, output);
+
+        true
     }
 
     //
@@ -568,7 +762,7 @@ impl NavigationState {
             return;
         }
 
-        if !self.compute_rough_path(start_node_index, end_node_index, &mut output) {
+        if !self.compute_rough_path(start_node_index, end_node_index, PathfindingOutput::Nodes(&mut output)) {
             return;
         }
 
@@ -576,12 +770,66 @@ impl NavigationState {
 
         let mut last = start;
         for node in output {
-            let current = self.graph[node.index].center;
+            let node = self.graph[node.index];
+            let current = node.center;
             debug.draw_line(last, current, [255, 0, 255, 255]);
+
             last = current;
         }
 
         debug.draw_line(last, end, [255, 0, 255, 255]);
+
+        debug.set_current_layer(0);
+    }
+
+    /// Show the funnel of a rough path.
+    pub fn debug_funnel(&self, debug: &mut super::DebugState, start: PositionF32, end: PositionF32) {
+        let [start_node_index, end_node_index] = match self.get_pathfinding_nodes(start, end) {
+            Some([start, end]) => [start, end],
+            None => { return; }
+        };
+
+        let mut rough_output = Vec::with_capacity(16);
+
+        // If we're in the same node, just return right away
+        if start_node_index == end_node_index { return; }
+        if !self.compute_rough_path(start_node_index, end_node_index, PathfindingOutput::Nodes(&mut rough_output)) { return; }
+
+        debug.set_current_layer(1);
+
+        // First & End triangle
+        let [v0, v1, v2] = self.triangle_points(Triangle(start_node_index as u32));
+        debug.draw_triangle(v0, v1, v2, [255, 255, 0, 255]);
+
+        let [v0, v1, v2] = self.triangle_points(Triangle(end_node_index as u32));
+        debug.draw_triangle(v0, v1, v2, [255, 255, 0, 255]);
+
+        // Gates
+        let [mut p1, mut p2] = rough_output.first().map(|path_node| path_node.gate ).unwrap();
+
+        let mut last_point = rough_output.first().map(|path_node| self.graph[path_node.index].center ).unwrap();
+        debug.draw_line(start, last_point, [0, 255, 255, 255]);
+
+        for i in 0..rough_output.len() {
+            let node = rough_output[i];
+            let [p3, p4] = node.gate;
+            debug.draw_line(p3, p4, [255, 0, 255, 255]);
+
+            if p1 == p3 || p2 == p3 {
+                debug.draw_line(p2, p4, [0, 255, 0, 255]);
+            } else if p1 == p4 || p2 == p4 {
+                debug.draw_line(p1, p3, [0, 0, 255, 255]);
+            }
+
+            let point = self.graph[node.index].center;
+            debug.draw_line(last_point, point, [0, 255, 255, 255]);
+            last_point = point;
+
+            p1 = p3;
+            p2 = p4;
+        }
+
+        debug.draw_line(end, last_point, [0, 255, 255, 255]);
 
         debug.set_current_layer(0);
     }
@@ -693,6 +941,7 @@ impl Default for NavNodeNeighbor {
     fn default() -> Self {
         NavNodeNeighbor { 
             center: PositionF32::default(),
+            segment: [PositionF32::default(); 2],
             triangle: Triangle(u32::MAX),
             distance: f32::INFINITY
         }

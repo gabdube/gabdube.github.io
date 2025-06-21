@@ -36,9 +36,16 @@ fn debug_pathfinding(game: &mut GameClient) {
 
     if let Some(start) = selected_pawn_position(&mut game.data.world) {
         let end = globals.mouse_position - globals.view_offset;
-        match globals.debug_flags.show_path_rough() {
-            true => nav.debug_rough_path(debug, start, end),
-            false => nav.debug_path(debug, start, end),
+
+        if globals.debug_flags.show_path_rough() {
+            nav.debug_rough_path(debug, start, end)
+        } else if globals.debug_flags.show_path_funnel() {
+            if globals.secondary_mouse_just_pressed() {
+                nav.debug_path(debug, start, end);
+            }
+            nav.debug_funnel(debug, start, end);
+        } else {
+            nav.debug_path(debug, start, end);
         }
     }
 }

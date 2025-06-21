@@ -2,6 +2,8 @@
 
 This is the source code of my personal blog.
 
+https://gabdube.github.io/
+
 ## Useful commands
 
 Building the rust source of a demo
