@@ -25,8 +25,8 @@ pub fn init(game: &mut GameClient) {
     data.compute_navigation();
     
     game.state.value = GameStateValue::Pathfinding;
-    game.data.globals.debug_flags.0 = DebugFlags::SHOW_NAVMESH | DebugFlags::SHOW_PATH_FUNNEL;
-    game.data.gui.set_debug_flags(game.data.globals.debug_flags);
+    game.data.common.debug_flags.0 = DebugFlags::SHOW_NAVMESH | DebugFlags::SHOW_PATH;
+    game.data.gui.set_debug_flags(game.data.common.debug_flags);
     game.data.gui.set_state(game.state.value, GameInputType::Select);
 
     game.data.world.order_sprites(false);
@@ -38,13 +38,13 @@ pub fn update(game: &mut GameClient) {
     common_inputs(game);
     set_insert_sprite(game);
 
-    if game.data.globals.primary_mouse_just_pressed() {
-        if game.data.gui.position_outside_gui(game.data.globals.mouse_position) {
+    if game.data.common.primary_mouse_just_pressed() {
+        if game.data.gui.position_outside_gui(game.data.common.mouse_position) {
             primary_mouse_actions(game);
         }
     }
 
-    if game.data.globals.mouse_moved() {
+    if game.data.common.mouse_moved() {
         mouse_moved_actions(game);
     }
 }

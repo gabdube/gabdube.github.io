@@ -1,4 +1,5 @@
 use crate::data::base::StaticSprite;
+
 use crate::shared::{SizeF32, PositionF32, pos};
 use crate::GameClient;
 use super::GameInputType;
@@ -25,7 +26,7 @@ pub(super) fn set_insert_sprite(game: &mut GameClient) {
 }
 
 pub(super) fn set_insert_sprite_value(game: &mut GameClient, sprite: StaticSprite) {
-    let position = game.data.globals.mouse_position;
+    let position = game.data.common.mouse_position;
     if game.data.gui.position_outside_gui(position) {
         game.data.world.set_insert_sprite(center_sprite(position, sprite.texcoord.size()), sprite);
     } else {
@@ -34,8 +35,8 @@ pub(super) fn set_insert_sprite_value(game: &mut GameClient, sprite: StaticSprit
 }
 
 pub(super) fn primary_mouse_actions(game: &mut GameClient) {
-    let globals = &game.data.globals;
-    let position = globals.mouse_position - globals.view_offset;
+    let common = &game.data.common;
+    let position = common.mouse_position - common.view_offset;
     match game.state.input_type {
         GameInputType::PlaceCastle => {
             if position_inside_terrain(&game.data.terrain, position) {
@@ -58,7 +59,7 @@ pub(super) fn primary_mouse_actions(game: &mut GameClient) {
             }
         }
         GameInputType::Delete => {
-            game.data.world.delete_sprite_at_position(position);
+            game.data.delete_sprite_at_position(position);
             game.data.compute_navigation();
         },
         GameInputType::Select => {
@@ -69,20 +70,22 @@ pub(super) fn primary_mouse_actions(game: &mut GameClient) {
 }
 
 pub(super) fn secondary_mouse_actions(game: &mut GameClient) {
-    let world = &mut game.data.world;
-    let selected_pawn = world.selected_sprites().first().copied()
-        .and_then(|entity| world.get_pawn(entity) );
-
-    if let Some(selected_pawn) = selected_pawn {
-        dbg!("TODO move pawn");
+    let common = game.data.common;
+    if game.data.gui.position_outside_gui(common.mouse_position) {
+        let world = &mut game.data.world;
+        let selected_pawn = world.selected_sprites().first().copied();
+        if let Some(selected_pawn) = selected_pawn {
+            let position = common.mouse_position - common.view_offset;
+            game.data.behaviours.new_behaviour(crate::data::behaviour::PawnBehaviour::move_to_point(selected_pawn, position));
+        }
     }
 }
 
 pub(super) fn mouse_moved_actions(game: &mut GameClient) {
     match game.state.input_type {
         GameInputType::Delete => {
-            let globals = &game.data.globals;
-            let position = globals.mouse_position - globals.view_offset;
+            let common = &game.data.common;
+            let position = common.mouse_position - common.view_offset;
             let hovered_new = game.data.world.sprite_at_position(position);
             let hovered_old = game.state.hovered_entity;
             if hovered_new != hovered_old {

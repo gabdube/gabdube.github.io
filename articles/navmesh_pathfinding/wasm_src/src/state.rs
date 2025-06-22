@@ -55,7 +55,7 @@ pub fn propagate_gui_events(client: &mut GameClient) {
                 client.state.input_type = new_input;
             }
             GuiEvent::SetDebugFlags(new_flags) => {
-                client.data.globals.debug_flags = new_flags;
+                client.data.common.debug_flags = new_flags;
             },
             GuiEvent::ResetWorld => {
                 client.data.clear_sprites();
@@ -66,7 +66,7 @@ pub fn propagate_gui_events(client: &mut GameClient) {
 }
 
 pub fn common_inputs(game: &mut GameClient) {
-    let globals = game.data.globals;
+    let globals = game.data.common;
 
     if globals.middle_mouse_just_pressed() {
         game.state.scroll_view = true;
@@ -80,7 +80,7 @@ pub fn common_inputs(game: &mut GameClient) {
 
     if game.state.scroll_view {
         if let Some(delta) = globals.mouse_delta() {
-            let globals = &mut game.data.globals;
+            let globals = &mut game.data.common;
             globals.view_offset -= delta;
             globals.flags.set_update_view_offset();
         }

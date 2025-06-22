@@ -5,18 +5,18 @@ use super::common_inputs;
 pub fn update(game: &mut GameClient) {
     common_inputs(game);
 
-    let globals = game.data.globals;
+    let common = game.data.common;
 
-    if globals.primary_mouse_just_pressed() {
-        if game.data.gui.position_outside_gui(globals.mouse_position) {
-            let position = globals.mouse_position - globals.view_offset;
+    if common.primary_mouse_just_pressed() {
+        if game.data.gui.position_outside_gui(common.mouse_position) {
+            let position = common.mouse_position - common.view_offset;
             game.data.world.clear_selected_sprites();
             game.data.world.select_sprite_at_position(position);
         }
     }
 
     if game.data.world.selected_sprites().len() > 0 {
-        if globals.debug_flags.debug_any_path() {
+        if common.debug_flags.debug_any_path() {
             debug_pathfinding(game);
         }
     }
@@ -30,19 +30,16 @@ fn selected_pawn_position(world: &mut crate::data::world::World) -> Option<Posit
 }
 
 fn debug_pathfinding(game: &mut GameClient) {
-    let globals = game.data.globals;
+    let common = game.data.common;
     let nav = &game.data.navigation;
     let debug = &mut game.data.debug;
 
     if let Some(start) = selected_pawn_position(&mut game.data.world) {
-        let end = globals.mouse_position - globals.view_offset;
+        let end = common.mouse_position - common.view_offset;
 
-        if globals.debug_flags.show_path_rough() {
+        if common.debug_flags.show_path_rough() {
             nav.debug_rough_path(debug, start, end)
-        } else if globals.debug_flags.show_path_funnel() {
-            if globals.secondary_mouse_just_pressed() {
-                nav.debug_path(debug, start, end);
-            }
+        } else if common.debug_flags.show_path_funnel() {
             nav.debug_funnel(debug, start, end);
         } else {
             nav.debug_path(debug, start, end);

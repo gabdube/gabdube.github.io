@@ -48,7 +48,7 @@ impl GameOutput {
     }
 
     pub fn update(client: &mut GameClient) {
-        let mut flags = client.data.globals.flags;
+        let mut flags = client.data.common.flags;
 
         client.output.clear_index();
 
@@ -62,7 +62,7 @@ impl GameOutput {
             flags.clear_update_terrain();
         }
 
-        if client.data.globals.total_sprites > 0 {
+        if client.data.common.total_sprites > 0 {
             GameOutput::render_sprites(client);
             flags.clear_update_animations();
         }
@@ -80,13 +80,13 @@ impl GameOutput {
             flags.clear_update_gui();
         }
 
-        client.data.globals.flags = flags;
+        client.data.common.flags = flags;
         client.output.write_index();
     }
 
     fn render_sprites(client: &mut GameClient) {
         // All sprites use the same texture in this tiny demo
-        let flags = &mut client.data.globals.flags;
+        let flags = &mut client.data.common.flags;
         let texture_id = client.data.assets.atlas.texture.id;
         let output = &mut client.output;
 
@@ -360,7 +360,7 @@ impl GameOutput {
     fn update_view_offset(client: &mut GameClient) {
         client.output.messages.push(OutputMessage { 
             ty: OutputMessageType::UpdateViewOffset,
-            params: OutputMessageParams { update_view_offset: client.data.globals.view_offset },
+            params: OutputMessageParams { update_view_offset: client.data.common.view_offset },
         });
     }
 

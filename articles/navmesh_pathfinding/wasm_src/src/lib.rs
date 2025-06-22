@@ -78,7 +78,7 @@ impl GameClient {
 
         let mut client = GameClient::default();
 
-        client.data.globals.view_size = init.view_size;
+        client.data.common.view_size = init.view_size;
 
         if let Err(e) = client.data.assets.init(&init) {
             log_err!(e);
@@ -114,6 +114,8 @@ impl GameClient {
 
         state::propagate_gui_events(self);
 
+        self.data.run_behaviours();
+
         self.data.generate_debug_info();
 
         self.data.finalize_update();
@@ -126,7 +128,7 @@ impl GameClient {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.data.globals.view_size = shared::size(width as f32, height as f32);
+        self.data.common.view_size = shared::size(width as f32, height as f32);
         self.data.gui.resize(width, height);
     }
 
@@ -167,13 +169,13 @@ impl GameClient {
         };
 
         client.data.gui.set_state(client.state.value, client.state.input_type);
-        client.data.gui.set_debug_flags(client.data.globals.debug_flags);
+        client.data.gui.set_debug_flags(client.data.common.debug_flags);
 
         Ok(client)
     }
 
     pub fn hidden(&mut self) -> bool {
-        self.data.globals.view_size.width == 0.0
+        self.data.common.view_size.width == 0.0
     }
 }
 

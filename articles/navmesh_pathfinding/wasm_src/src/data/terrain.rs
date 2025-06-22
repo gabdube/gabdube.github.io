@@ -10,6 +10,7 @@ pub enum TerrainCell {
     Grass,
 }
 
+/// Bare minimum to build a 2D terrain
 pub struct Terrain {
     width: u32,
     height: u32,
