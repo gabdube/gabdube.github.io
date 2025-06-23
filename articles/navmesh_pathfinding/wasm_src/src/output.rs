@@ -115,12 +115,18 @@ impl GameOutput {
         for sprite in client.world_data.world.ordered_sprites() {
             let [width, height] = sprite.texcoord.splat_size();
 
-            let gpu_sprite = GpuSpriteData {
+            let mut gpu_sprite = GpuSpriteData {
                 position: sprite.position.splat(),
                 size: [width, height],
                 texcoord_offset: [sprite.texcoord.left, sprite.texcoord.top],
                 texcoord_size: [width, height],
             };
+
+            if sprite.flags.flipped() {
+                gpu_sprite.texcoord_offset[0] += width;
+                gpu_sprite.texcoord_size[0] = -gpu_sprite.texcoord_size[0];
+            }
+
             output.push_data(&gpu_sprite);
 
             if sprite.flags.highlighted() {

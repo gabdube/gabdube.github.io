@@ -2,23 +2,14 @@
 use hecs::{Entity, World as HecsWorld};
 use zerocopy::transmute;
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use crate::data::behaviour::{PawnBehaviourState, StorePawnBehaviour};
+use crate::{data::behaviour::{PawnBehaviourState}, store::StoreLoad};
 use super::{World, BaseSprite, AnimationState, IsPawn, IsCastle, IsHouse, HasCollision};
-
-#[derive(Copy, Clone, IntoBytes, TryFromBytes, Immutable)]
-pub struct StorePawn {
-    entity: [u32; 2],
-    sprite: BaseSprite,
-    animate: AnimationState,
-    behaviour: StorePawnBehaviour,
-}
 
 #[derive(Copy, Clone, IntoBytes, TryFromBytes, Immutable)]
 pub struct StoreActor {
     entity: [u32; 2],
     sprite: BaseSprite,
 }
-
 
 impl crate::store::StoreLoad for World {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
@@ -30,7 +21,7 @@ impl crate::store::StoreLoad for World {
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
         let mut world = World::default();
-        spawn_pawns(reader, &mut world.inner);
+        spawn_pawns(reader, &mut world.inner)?;
         spawn_actors::<IsHouse>(reader, &mut world.inner);
         spawn_actors::<IsCastle>(reader, &mut world.inner);
         world.insert_sprite = reader.try_read_option()?;
@@ -41,19 +32,15 @@ impl crate::store::StoreLoad for World {
 
 
 fn store_pawns(writer: &mut crate::store::StoreWriter, world: &mut HecsWorld) {
-    let mut sprites = Vec::with_capacity(16);
-    
-    for (entity, (_, &sprite, &animate, &behaviour)) in world.query_mut::<(&IsPawn, &BaseSprite, &AnimationState, &PawnBehaviourState)>() {
-        sprites.push(StorePawn {
-            entity: transmute!(entity.to_bits()),
-            sprite,
-            animate,
-            behaviour: StorePawnBehaviour::from(behaviour),
-        });
-    }
+    let pawns_count = world.query_mut::<(&IsPawn, &BaseSprite, &AnimationState, &PawnBehaviourState)>().into_iter().count() as u32;
+    writer.write(&pawns_count);
 
-    writer.write_array(&sprites);
-    sprites.clear();
+    for (entity, (_, sprite, animate, behaviour)) in world.query_mut::<(&IsPawn, &BaseSprite, &AnimationState, &mut PawnBehaviourState)>() {
+        writer.write_entity_option(Some(entity));
+        writer.write(sprite);
+        writer.write(animate);
+        behaviour.store(writer);
+    }
 }
 
 fn store_actors<T: hecs::Query>(writer: &mut crate::store::StoreWriter, world: &mut HecsWorld) {
@@ -61,7 +48,7 @@ fn store_actors<T: hecs::Query>(writer: &mut crate::store::StoreWriter, world: &
 
     for (entity, (_, &sprite)) in world.query_mut::<(T, &BaseSprite)>() {
         sprites.push(StoreActor {
-            entity: transmute!(entity.to_bits()),
+            entity: transmute!(entity.to_bits()), 
             sprite,
         });
     }
@@ -70,17 +57,18 @@ fn store_actors<T: hecs::Query>(writer: &mut crate::store::StoreWriter, world: &
     sprites.clear();
 }
 
-fn spawn_pawns(
-    reader: &mut crate::store::StoreReader,
-    world: &mut HecsWorld,
-) {
-    let actors = unsafe { reader.read_array_transmute::<StorePawn>() };
-    world.reserve::<(IsPawn, BaseSprite, AnimationState, PawnBehaviourState)>(actors.len() as u32);
-    for actor in actors.iter() {
-        let entity = Entity::from_bits(transmute!(actor.entity)).expect("Corrupted entity data");
-        let behaviour = PawnBehaviourState::from(actor.behaviour);
-        world.spawn_at(entity, (IsPawn, actor.sprite, actor.animate, behaviour));
+fn spawn_pawns(reader: &mut crate::store::StoreReader, world: &mut HecsWorld) -> Result<(), crate::error::Error> {
+    let pawns_count: u32 = reader.try_read()?;
+    world.reserve::<(IsPawn, BaseSprite, AnimationState, PawnBehaviourState)>(pawns_count);
+    for _ in 0..pawns_count {
+        let entity = reader.try_read_entity_option()?.expect("Corrupted entity");
+        let sprite: BaseSprite = reader.try_read()?;
+        let animate: AnimationState = reader.try_read()?;
+        let behaviour = PawnBehaviourState::load(reader)?;
+        world.spawn_at(entity, (IsPawn, sprite, animate, behaviour));
     }
+
+    Ok(())
 }
 
 fn spawn_actors<T: hecs::Component + Default>(

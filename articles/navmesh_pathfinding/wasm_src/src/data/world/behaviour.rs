@@ -9,7 +9,7 @@ impl World {
         self.inner.query_one_mut::<&mut PawnBehaviourState>(pawn).ok()
     }
 
-    pub fn iter_pawn_behaviours(&self) -> QueryBorrow<&mut PawnBehaviourState> {
+    pub fn pawn_behaviours(&self) -> QueryBorrow<&mut PawnBehaviourState> {
         self.inner.query::<&mut PawnBehaviourState>()
     }
 }

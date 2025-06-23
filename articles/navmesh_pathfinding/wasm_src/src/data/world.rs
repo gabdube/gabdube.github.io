@@ -125,11 +125,6 @@ impl World {
         self.inner.query::<(&BaseSprite, &HasCollision)>()
     }
 
-    pub fn get_pawn(&mut self, entity: Entity) -> Option<BaseSprite> {
-        self.inner.query_one_mut::<(&IsPawn, &BaseSprite)>(entity).ok()
-            .map(|(_, sprite)| *sprite )
-    }
-
     pub(super) fn add_pawn(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
         let sprites = BaseSprite {
             position,
@@ -139,6 +134,36 @@ impl World {
         };
 
         self.inner.spawn((IsPawn, sprites, animate, PawnBehaviourState::idle()))
+    }
+
+    pub fn get_pawn_position(&self, entity: Entity) -> Option<PositionF32> {
+        let mut sprite_query = self.inner.query_one::<(&IsPawn, &mut BaseSprite)>(entity).ok()?;
+        let (_, sprite) = sprite_query.get()?;
+        Some(sprite.base_position())
+    }
+
+    pub fn set_pawn_position(&self, entity: Entity, position: PositionF32) -> Option<()> {
+        let mut query = self.inner.query_one::<(&IsPawn, &mut BaseSprite)>(entity).ok()?;
+        let (_, sprite) = query.get()?;
+        sprite.set_base_position(position);
+        Some(())
+    }
+
+    pub fn set_pawn_flipped(&self, entity: Entity, flipped: bool) -> Option<()> {
+        let mut query = self.inner.query_one::<(&IsPawn, &mut BaseSprite)>(entity).ok()?;
+        let (_, sprite) = query.get()?;
+        match flipped {
+            true => { sprite.flags.set_flipped(); }
+            false => { sprite.flags.clear_flipped(); }
+        }
+        Some(())
+    }
+
+    pub fn set_pawn_animation(&self, entity: Entity, new_animation: AnimationState) -> Option<()> {
+        let mut query = self.inner.query_one::<(&IsPawn, &mut AnimationState)>(entity).ok()?;
+        let (_, animation) = query.get()?;
+        *animation = new_animation;
+        Some(())
     }
 
     pub(super) fn add_house(&mut self, position: PositionF32, sprite: StaticSprite) -> Entity {

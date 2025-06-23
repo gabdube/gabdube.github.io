@@ -2,7 +2,6 @@ mod move_to_point;
 
 use hecs::Entity;
 use zerocopy::transmute;
-use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
 use crate::data::GameWorldData;
 use crate::shared::PositionF32;
 use super::{StoreBehaviour, StoreBehaviourType, AnyBehaviour};
@@ -13,13 +12,12 @@ pub enum PawnBehaviourType {
     MoveToPoint { target: PositionF32 }
 }
 
-#[derive(Copy, Clone)]
 pub enum PawnBehaviourStateData {
     None,
+    MoveTo { steps: Vec<PositionF32>, current_step: u32 }
 }
 
 /// The behaviour state stored in the world
-#[derive(Copy, Clone)]
 pub struct PawnBehaviourState {
     pub ty: PawnBehaviourType,
     pub data: PawnBehaviourStateData,
@@ -79,10 +77,12 @@ pub(super) fn new_behavior(data: &mut GameWorldData, behavior: PawnBehaviour) {
 
 /// Runs the pawn behaviour
 pub(super) fn run(world_data: &mut GameWorldData) {
-    for (entity, behaviour) in world_data.world.iter_pawn_behaviours().iter() {
-        match behaviour.ty {
+    for (entity, state) in world_data.world.pawn_behaviours().iter() {
+        match state.ty {
             PawnBehaviourType::Idle => {},
-            PawnBehaviourType::MoveToPoint { .. } => move_to_point::run(entity, behaviour),
+            PawnBehaviourType::MoveToPoint { .. } => {
+                move_to_point::run(entity, state, move_to_point::params(state, &world_data.world, &world_data.data));
+            },
         }
     }
 }
@@ -92,28 +92,43 @@ pub(super) fn run(world_data: &mut GameWorldData) {
 // Store / Load
 //
 
-#[derive(Copy, Clone, IntoBytes, TryFromBytes, Immutable)]
-pub struct StorePawnBehaviour {
-    pub ty: StoreBehaviourType,
-    pub step: u32,
-}
-
-impl From<PawnBehaviourState> for StorePawnBehaviour {
-    fn from(value: PawnBehaviourState) -> Self {
-        StorePawnBehaviour {
-            ty: StoreBehaviourType::from(value.ty),
-            step: value.step,
+impl crate::store::StoreLoad for PawnBehaviourState {
+    fn store(&mut self, writer: &mut crate::store::StoreWriter) {
+        writer.write(&self.step);
+        writer.write(&StoreBehaviourType::from(self.ty));
+        
+        match &self.data {
+            PawnBehaviourStateData::None => { 
+                writer.write(&0u32);
+            },
+            PawnBehaviourStateData::MoveTo { steps, current_step } => {
+                writer.write(&1u32);
+                writer.write(current_step);
+                writer.write_array(steps);
+            }
         }
     }
-}
 
-impl From<StorePawnBehaviour> for PawnBehaviourState {
-    fn from(value: StorePawnBehaviour) -> Self {
-        PawnBehaviourState {
-            ty: PawnBehaviourType::from(value.ty),
-            data: PawnBehaviourStateData::None,
-            step: value.step,
-        }
+    fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
+        let step = reader.try_read()?;
+        let store_ty: StoreBehaviourType = reader.try_read()?;
+        let ty = PawnBehaviourType::from(store_ty);
+
+        let data_id: u32 = reader.try_read()?;
+        let data = match data_id {
+            1 => {
+                let current_step = reader.try_read()?;
+                let steps = reader.read_array().to_vec();
+                PawnBehaviourStateData::MoveTo { steps, current_step }
+            }
+            _ => PawnBehaviourStateData::None
+        };
+
+        Ok(PawnBehaviourState {
+            step,
+            ty,
+            data
+        })
     }
 }
 

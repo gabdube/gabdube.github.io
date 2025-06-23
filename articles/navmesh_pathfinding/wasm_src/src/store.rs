@@ -41,15 +41,14 @@ impl StoreWriter {
     }
 
     pub fn write_option<T: IntoBytes+Immutable>(&mut self, op_value: &Option<T>) {
-        let total_size = size_of::<T>() + U32_SIZE;
-        if self.must_realloc(total_size) {
-            self.realloc(total_size);
-        }
-
-        self.write_u32(op_value.is_some() as u32);
-        if let Some(value) = op_value.as_ref() {
-            value.write_to_prefix(self.remaining_bytes()).unwrap();
-            self.data_offset += size_of::<T>();
+        match op_value.as_ref() {
+            Some(value) => {
+                self.write(&1u32);
+                self.write(value);
+            },
+            None => {
+                self.write(&0u32);
+            }
         }
     }
 
@@ -127,7 +126,7 @@ impl StoreWriter {
         self.write_u32(value as u32)
     }
 
-    pub fn write_entity_option(&mut self, value: Option<hecs::Entity>) { 
+    pub fn write_entity_option(&mut self, value: Option<hecs::Entity>) {
         let size = U32_SIZE + U32_SIZE;
         if self.must_realloc(size) {
             self.realloc(size);

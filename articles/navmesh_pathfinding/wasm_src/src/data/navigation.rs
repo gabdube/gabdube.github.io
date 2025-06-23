@@ -620,7 +620,7 @@ impl NavigationState {
     /**
         Compute and optimize the path between `start` and `end`. Returns a vector of points the actor at `start` will move through to reach `end`
     */
-    fn compute_path(&self, start: PositionF32, end: PositionF32, output: &mut Vec<PositionF32>) -> bool {
+    pub fn compute_path(&self, start: PositionF32, end: PositionF32, output: &mut Vec<PositionF32>) -> bool {
         let [start_node_index, end_node_index] = match self.get_pathfinding_nodes(start, end) {
             Some([start, end]) => [start, end],
             None => { return false; }

@@ -66,6 +66,7 @@ impl BaseSpriteFlags {
     pub const FLIPPED: u8  = 0x1;
     pub const HIGHLIGHTED: u8 = 0x2;
 
+    flags!(flipped, set_flipped, clear_flipped, Self::FLIPPED);
     flags!(highlighted, set_highlighted, clear_highlighted, Self::HIGHLIGHTED);
 
     #[inline(always)]
@@ -91,6 +92,12 @@ impl BaseSprite {
     pub fn base_position(&self) -> PositionF32 {
         let [width, height] = self.texcoord.splat_size();
         pos(self.position.x + (width * 0.5), self.position.y + height)
+    }
+
+    pub fn set_base_position(&mut self, position: PositionF32) {
+        let [width, height] = self.texcoord.splat_size();
+        self.position.x = position.x - (width * 0.5);
+        self.position.y = position.y - height;
     }
 }
 

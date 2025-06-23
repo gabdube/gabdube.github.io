@@ -26,9 +26,8 @@ pub fn update(game: &mut GameClient) {
 
 fn selected_pawn_position(world: &mut crate::data::world::World) -> Option<PositionF32> {
     // Only one item can be selected at a time in this demo
-    world.selected_sprites().first().copied()
-        .and_then(|entity| world.get_pawn(entity) )
-        .map(|sprite| sprite.base_position() )
+    let entity = world.selected_sprites().first().copied()?;
+    world.get_pawn_position(entity)
 }
 
 fn debug_pathfinding(game: &mut GameClient) {

@@ -1,5 +1,5 @@
 mod pawn;
-pub use pawn::{PawnBehaviour, PawnBehaviourState, StorePawnBehaviour};
+pub use pawn::{PawnBehaviour, PawnBehaviourState};
 
 use zerocopy::transmute;
 use crate::shared::PositionF32;
@@ -44,7 +44,7 @@ impl BehaviourState {
 
     fn run_inner(world_data: &mut super::GameWorldData) {
         // In a multithreaded environment, behaviours are run in parallel and distributed through a threadpool
-        // alas we're on wasm which is single threaded. 
+        // alas we're on web/wasm which is single threaded. 
         pawn::run(world_data);
     }
 }
