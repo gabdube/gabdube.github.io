@@ -66,7 +66,7 @@ impl GameClientInit {
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct GameClient {
-    data: data::GameData,
+    world_data: data::GameWorldData,
     state: state::GameState,
     output: output::GameOutput,
 }
@@ -77,15 +77,16 @@ impl GameClient {
         ::std::panic::set_hook(Box::new(logging::panic_handler));
 
         let mut client = GameClient::default();
+        let data = &mut client.world_data.data;
 
-        client.data.common.view_size = init.view_size;
+        data.common.view_size = init.view_size;
 
-        if let Err(e) = client.data.assets.init(&init) {
+        if let Err(e) = data.assets.init(&init) {
             log_err!(e);
             return None;
         }
 
-        if let Err(e) = client.data.gui.init(&init, &client.data.assets) {
+        if let Err(e) = data.gui.init(&init, &data.assets) {
             log_err!(e);
             return None;
         }
@@ -100,7 +101,7 @@ impl GameClient {
             return;
         }
 
-        self.data.prepare_update(time);
+        self.world_data.prepare_update(time);
 
         match self.state.value {
             Uninitialized => state::final_demo::init(self),
@@ -110,15 +111,15 @@ impl GameClient {
             FinalDemo => state::final_demo::update(self),
         }
 
-        self.data.update_gui();
+        self.world_data.update_gui();
 
         state::propagate_gui_events(self);
 
-        self.data.run_behaviours();
+        self.world_data.run_behaviours();
 
-        self.data.generate_debug_info();
+        self.world_data.generate_debug_info();
 
-        self.data.finalize_update();
+        self.world_data.finalize_update();
 
         output::GameOutput::update(self);
     }
@@ -128,33 +129,34 @@ impl GameClient {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.data.common.view_size = shared::size(width as f32, height as f32);
-        self.data.gui.resize(width, height);
+        let data = &mut self.world_data.data;
+        data.common.view_size = shared::size(width as f32, height as f32);
+        data.gui.resize(width, height);
     }
 
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {
-        self.data.update_mouse_position(x, y);
+        self.world_data.update_mouse_position(x, y);
     }
 
     pub fn update_mouse_buttons(&mut self, button: u8, pressed: bool) {
-        self.data.update_mouse_buttons(button, pressed);
+        self.world_data.update_mouse_buttons(button, pressed);
     }
 
     pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
-        self.data.gui.update_keys(key_name, pressed);
+        self.world_data.data.gui.update_keys(key_name, pressed);
     }
 
 }
 
 impl GameClient {
     pub fn on_reload(&mut self) {
-        self.data.clear_sprites();
+        self.world_data.clear_sprites();
         state::final_demo::init(self);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {
         let mut writer = store::StoreWriter::new();
-        self.data.store(&mut writer);
+        self.world_data.store(&mut writer);
         self.state.store(&mut writer);
         writer.data()
     }
@@ -163,19 +165,21 @@ impl GameClient {
         let mut reader = store::StoreReader::new(bytes)?;
 
         let mut client = GameClient {
-            data: data::GameData::load(&mut reader)?,
+            world_data: data::GameWorldData::load(&mut reader)?,
             state: state::GameState::load(&mut reader)?,
             output: output::GameOutput::default(),
         };
 
-        client.data.gui.set_state(client.state.value, client.state.input_type);
-        client.data.gui.set_debug_flags(client.data.common.debug_flags);
+        let data = &mut client.world_data.data;
+        let gui = &mut data.gui;
+        gui.set_state(client.state.value, client.state.input_type);
+        gui.set_debug_flags(data.common.debug_flags);
 
         Ok(client)
     }
 
     pub fn hidden(&mut self) -> bool {
-        self.data.common.view_size.width == 0.0
+        self.world_data.data.common.view_size.width == 0.0
     }
 }
 

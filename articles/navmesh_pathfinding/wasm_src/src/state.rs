@@ -44,29 +44,30 @@ pub struct GameState {
 
 /// Propagates the events generated in the gui module to the other parts of the application
 pub fn propagate_gui_events(client: &mut GameClient) {
-    let events = client.data.gui.events();
+    let world_data = &mut client.world_data;
+    let events = world_data.data.gui.events();
     for event in events {
         match event {
             GuiEvent::GameStateValueChanged(new_state) => {
                 client.state.value = new_state;
             },
             GuiEvent::SetInputType(new_input) => {
-                client.data.world.clear_selected_sprites();
+                world_data.world.clear_selected_sprites();
                 client.state.input_type = new_input;
             }
             GuiEvent::SetDebugFlags(new_flags) => {
-                client.data.common.debug_flags = new_flags;
+                world_data.data.common.debug_flags = new_flags;
             },
             GuiEvent::ResetWorld => {
-                client.data.clear_sprites();
-                client.data.compute_navigation();
+                world_data.clear_sprites();
+                world_data.compute_navigation();
             },
         }
     }
 }
 
 pub fn common_inputs(game: &mut GameClient) {
-    let globals = game.data.common;
+    let globals = game.world_data.data.common;
 
     if globals.middle_mouse_just_pressed() {
         game.state.scroll_view = true;
@@ -80,7 +81,7 @@ pub fn common_inputs(game: &mut GameClient) {
 
     if game.state.scroll_view {
         if let Some(delta) = globals.mouse_delta() {
-            let globals = &mut game.data.common;
+            let globals = &mut game.world_data.data.common;
             globals.view_offset -= delta;
             globals.flags.set_update_view_offset();
         }

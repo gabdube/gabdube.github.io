@@ -4,7 +4,6 @@ mod behaviour;
 use hecs::{Entity, World as HecsWorld};
 use zerocopy_derive::{FromBytes, Immutable, IntoBytes};
 use crate::shared::{PositionF32, AABB};
-use crate::store::StoreLoad;
 use super::base::{BaseSprite, BaseSpriteFlags, AnimationState, StaticSprite};
 use super::behaviour::PawnBehaviourState;
 

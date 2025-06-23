@@ -6,7 +6,7 @@ use delaunator::{Triangulation, Point, triangulate};
 use zerocopy_derive::{FromBytes, Immutable, IntoBytes};
 use crate::shared::{PositionF32, AABB, pos};
 use crate::store::StoreLoad;
-use super::GameData;
+use super::GameWorldData;
 
 /// The identifier of a triangle in the navmesh. 
 /// The inner identifier is also the index of the triangle in the navigation graph
@@ -116,13 +116,14 @@ impl NavigationState {
     // Navmesh generation
     //
 
-    pub fn rebuild_navmesh(data: &mut GameData) {
-        let nav = &mut data.navigation;
+    pub fn rebuild_navmesh(world_data: &mut GameWorldData) {
+        let nav = &mut world_data.data.navigation;
+        let terrain = &world_data.data.terrain;
 
         nav.clear();
 
-        Self::terrain_points(&data.terrain, &mut nav.points);
-        Self::sprites_collision_points(&data.world, &mut nav.points, &mut nav.blocked_areas);
+        Self::terrain_points(terrain, &mut nav.points);
+        Self::sprites_collision_points(&world_data.world, &mut nav.points, &mut nav.blocked_areas);
         nav.triangulation = Some(triangulate(&nav.points));
 
         nav.generate_nav_graph();

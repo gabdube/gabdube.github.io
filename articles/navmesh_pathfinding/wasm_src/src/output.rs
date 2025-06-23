@@ -48,7 +48,7 @@ impl GameOutput {
     }
 
     pub fn update(client: &mut GameClient) {
-        let mut flags = client.data.common.flags;
+        let mut flags = client.world_data.data.common.flags;
 
         client.output.clear_index();
 
@@ -62,16 +62,16 @@ impl GameOutput {
             flags.clear_update_terrain();
         }
 
-        if client.data.common.total_sprites > 0 {
+        if client.world_data.data.common.total_sprites > 0 {
             GameOutput::render_sprites(client);
             flags.clear_update_animations();
         }
 
-        if let Some(sprite) = client.data.world.has_insert_sprite() {
+        if let Some(sprite) = client.world_data.world.has_insert_sprite() {
             GameOutput::render_insert_sprite(client, sprite);
         }
 
-        if client.data.debug.any() {
+        if client.world_data.data.debug.any() {
             GameOutput::render_debug(client);
         }
 
@@ -80,17 +80,18 @@ impl GameOutput {
             flags.clear_update_gui();
         }
 
-        client.data.common.flags = flags;
+        client.world_data.data.common.flags = flags;
         client.output.write_index();
     }
 
     fn render_sprites(client: &mut GameClient) {
         // All sprites use the same texture in this tiny demo
-        let flags = &mut client.data.common.flags;
-        let texture_id = client.data.assets.atlas.texture.id;
+        let data = &mut client.world_data.data;
+        let flags = &mut data.common.flags;
+        let texture_id = data.assets.atlas.texture.id;
         let output = &mut client.output;
 
-        let instance_count = client.data.world.order_sprites(flags.update_animations());
+        let instance_count = client.world_data.world.order_sprites(flags.update_animations());
         
         let update_sprites = UpdateSpritesParams { 
             offset_bytes: output.data_offset,
@@ -111,7 +112,7 @@ impl GameOutput {
             params: OutputMessageParams { draw_sprites } }
         );
 
-        for sprite in client.data.world.ordered_sprites() {
+        for sprite in client.world_data.world.ordered_sprites() {
             let [width, height] = sprite.texcoord.splat_size();
 
             let gpu_sprite = GpuSpriteData {
@@ -195,7 +196,7 @@ impl GameOutput {
     fn update_terrain(client: &mut GameClient) {
         use crate::data::terrain::TERRAIN_SPRITE_SIZE;
 
-        let data = &client.data;
+        let data = &client.world_data.data;
         let output = &mut client.output;
 
         // Message
@@ -230,9 +231,10 @@ impl GameOutput {
 
     fn render_debug(client: &mut GameClient) {
         let output = &mut client.output;
+        let debug = &client.world_data.data.debug;
 
         // Preallocating vertex & index space
-        let [index_count, index_size, vertex_size] = client.data.debug.buffers_sizes();
+        let [index_count, index_size, vertex_size] = debug.buffers_sizes();
         let total_size = index_size + vertex_size;
         if output.data[output.data_offset..].len() < total_size {
             Self::realloc_data(&mut output.data, total_size);
@@ -248,7 +250,7 @@ impl GameOutput {
         let (data, vertex_slice) = data.split_at_mut(vertex_offset_base);
         let (_, index_slice) = data.split_at_mut(index_offset_base);
         assert!(index_slice.len() == index_size && vertex_slice.len() == vertex_size);
-        client.data.debug.generate_mesh(index_slice, vertex_slice);
+        debug.generate_mesh(index_slice, vertex_slice);
 
         // Message generation
         let draw_debug = DrawDebugParams {
@@ -344,13 +346,14 @@ impl GameOutput {
     #[cfg(feature="gui")]
     fn render_gui(client: &mut GameClient) {
         let output = &mut client.output;
+        let gui = &mut client.world_data.data.gui;
 
         output.messages.push(OutputMessage { ty: OutputMessageType::ResetGui, params: OutputMessageParams { none: () } });
 
-        let delta = client.data.gui.texture_delta();
+        let delta = gui.texture_delta();
         output.update_gui_textures(&delta);
 
-        let mesh = client.data.gui.tesselate();
+        let mesh = gui.tesselate();
         output.update_gui_mesh(&mesh);
     }
 
@@ -360,7 +363,7 @@ impl GameOutput {
     fn update_view_offset(client: &mut GameClient) {
         client.output.messages.push(OutputMessage { 
             ty: OutputMessageType::UpdateViewOffset,
-            params: OutputMessageParams { update_view_offset: client.data.common.view_offset },
+            params: OutputMessageParams { update_view_offset: client.world_data.data.common.view_offset },
         });
     }
 

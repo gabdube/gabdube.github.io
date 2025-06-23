@@ -24,28 +24,28 @@ impl BehaviourState {
         self.new.push(behaviour.into());
     }
 
-    pub fn run(data: &mut super::GameData) {
-        if !data.behaviours.new.is_empty() {
-            Self::run_new_behaviour(data);
+    pub fn run(world_data: &mut super::GameWorldData) {
+        if !world_data.data.behaviours.new.is_empty() {
+            Self::run_new_behaviour(world_data);
         }
        
-        Self::run_inner(data);
+        Self::run_inner(world_data);
     }
 
-    fn run_new_behaviour(data: &mut super::GameData) {
-        let behaviours: Vec<AnyBehaviour> = data.behaviours.new.drain(..).collect();
+    fn run_new_behaviour(world_data: &mut super::GameWorldData) {
+        let behaviours: Vec<AnyBehaviour> = world_data.data.behaviours.new.drain(..).collect();
         for behaviour in behaviours {
             match behaviour {
                 AnyBehaviour::NoBehaviour => {},
-                AnyBehaviour::Pawn(pawn) => { pawn::new_behavior(data, pawn);  }
+                AnyBehaviour::Pawn(pawn) => { pawn::new_behavior(world_data, pawn);  }
             }
         }
     }
 
-    fn run_inner(data: &mut super::GameData) {
+    fn run_inner(world_data: &mut super::GameWorldData) {
         // In a multithreaded environment, behaviours are run in parallel and distributed through a threadpool
         // alas we're on wasm which is single threaded. 
-        pawn::run(data);
+        pawn::run(world_data);
     }
 }
 

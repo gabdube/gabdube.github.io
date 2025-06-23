@@ -3,7 +3,7 @@ mod move_to_point;
 use hecs::Entity;
 use zerocopy::transmute;
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use crate::data::GameData;
+use crate::data::GameWorldData;
 use crate::shared::PositionF32;
 use super::{StoreBehaviour, StoreBehaviourType, AnyBehaviour};
 
@@ -59,7 +59,7 @@ impl PawnBehaviour {
 
 /// Cancel the current behaviour and replace it by the new one
 /// This demo does not have any behaviour with cancelling logic
-pub(super) fn new_behavior(data: &mut GameData, behavior: PawnBehaviour) {
+pub(super) fn new_behavior(data: &mut GameWorldData, behavior: PawnBehaviour) {
     let state = match data.world.pawn_behaviour(behavior.entity) {
         Some(b) => b,
         None => {
@@ -78,8 +78,8 @@ pub(super) fn new_behavior(data: &mut GameData, behavior: PawnBehaviour) {
 }
 
 /// Runs the pawn behaviour
-pub(super) fn run(data: &mut GameData) {
-    for (entity, behaviour) in data.world.iter_pawn_behaviours().iter() {
+pub(super) fn run(world_data: &mut GameWorldData) {
+    for (entity, behaviour) in world_data.world.iter_pawn_behaviours().iter() {
         match behaviour.ty {
             PawnBehaviourType::Idle => {},
             PawnBehaviourType::MoveToPoint { .. } => move_to_point::run(entity, behaviour),

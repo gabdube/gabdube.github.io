@@ -71,7 +71,6 @@ impl CommonParams {
 pub struct GameData {
     pub common: CommonParams,
     pub assets: Assets,
-    pub world: World,
     pub terrain: Terrain,
     pub navigation: NavigationState,
     pub behaviours: BehaviourState,
@@ -79,25 +78,35 @@ pub struct GameData {
     pub gui: Gui,
 }
 
-impl GameData {
+#[derive(Default)]
+pub struct GameWorldData {
+    pub world: World,
+    pub data: GameData,
+}
+
+impl GameWorldData {
 
     pub fn reset(&mut self) {
         self.world = World::default();
-        self.terrain = Terrain::default();
-        self.navigation.clear();
-        self.common.flags.set_update_terrain();
-        self.common.total_sprites = 0;
+
+        let data = &mut self.data;
+        data.terrain = Terrain::default();
+        data.navigation.clear();
+        data.common.flags.set_update_terrain();
+        data.common.total_sprites = 0;
     }
 
     pub fn clear_sprites(&mut self) {
         self.world = World::default();
-        self.navigation.clear();
-        self.common.total_sprites = 0;
+
+        let data = &mut self.data;
+        data.navigation.clear();
+        data.common.total_sprites = 0;
     }
 
     pub fn initialize_terrain(&mut self, width: u32, height: u32) {
-        self.terrain.init(width, height);
-        self.common.flags.set_update_terrain();
+        self.data.terrain.init(width, height);
+        self.data.common.flags.set_update_terrain();
     }
 
     pub fn compute_navigation(&mut self) {
@@ -105,9 +114,11 @@ impl GameData {
     }
 
     pub fn prepare_update(&mut self, new_time: f64) {
-        self.debug.clear();
+        let data = &mut self.data;
         
-        let global = &mut self.common;
+        data.debug.clear();
+        
+        let global = &mut data.common;
         global.time_delta = (new_time - global.time) as f32;
         global.time = new_time;
 
@@ -126,11 +137,11 @@ impl GameData {
             global.last_animation_tick = new_time;
         }
 
-        self.gui.update_time(global.time_delta);
+        data.gui.update_time(global.time_delta);
     }
 
     pub fn finalize_update(&mut self) {
-        let c = &mut self.common;
+        let c = &mut self.data.common;
         c.mouse_buttons[0].flip();
         c.mouse_buttons[1].flip();
         c.mouse_buttons[2].flip();
@@ -138,8 +149,8 @@ impl GameData {
     }
 
     pub fn update_gui(&mut self) {
-        if self.gui.update() {
-            self.common.flags.set_update_gui();
+        if self.data.gui.update() {
+            self.data.common.flags.set_update_gui();
         }
     }
 
@@ -148,77 +159,85 @@ impl GameData {
     }
 
     pub fn generate_debug_info(&mut self) {
-        let debug_flags = self.common.debug_flags;
-        let debug = &mut self.debug;
+        let data = &mut self.data;
+        let debug = &mut data.debug;
+        let debug_flags = data.common.debug_flags;
 
         if debug_flags.show_navmesh() {
-            self.navigation.debug_navmesh(debug, debug_flags.show_cell_centers());
+            data.navigation.debug_navmesh(debug, debug_flags.show_cell_centers());
         }
 
         if debug_flags.show_pathfinding_graph() {
-            self.navigation.debug_pathfinding_graph(debug);
+            data.navigation.debug_pathfinding_graph(debug);
         }
     }
 
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {
-        self.common.mouse_position = pos(x, y);
-        self.gui.update_mouse_position(x, y);
+        let data = &mut self.data;
+        data.common.mouse_position = pos(x, y);
+        data.gui.update_mouse_position(x, y);
     }
 
     pub fn update_mouse_buttons(&mut self, button: u8, pressed: bool) {
+        let data = &mut self.data;
         let index = button as usize;
-        if index < self.common.mouse_buttons.len() {
-            self.common.mouse_buttons[index] = match pressed {
+        if index < data.common.mouse_buttons.len() {
+            data.common.mouse_buttons[index] = match pressed {
                 true => base::ButtonState::JustPressed,
                 false => base::ButtonState::JustReleased,
             };
         }
 
-        self.gui.update_mouse_buttons(self.common.mouse_position, button, pressed);
+        data.gui.update_mouse_buttons(data.common.mouse_position, button, pressed);
     }
 
     pub fn delete_sprite_at_position(&mut self, position: PositionF32) {
         if self.world.delete_sprite_at_position(position) {
-            self.common.total_sprites -= 1;
+            self.data.common.total_sprites -= 1;
         }
     }
 
     pub fn add_pawn(&mut self, position: PositionF32) {
-        let idle = self.assets.atlas.pawn_idle;
+        let idle = self.data.assets.atlas.pawn_idle;
         self.world.add_pawn(position, idle.animate());
-        self.common.total_sprites += 1;
+        self.data.common.total_sprites += 1;
     }
 
     pub fn add_house(&mut self, position: PositionF32) {
-        let house = self.assets.atlas.house;
+        let house = self.data.assets.atlas.house;
         self.world.add_house(position, house);
-        self.common.total_sprites += 1;
+        self.data.common.total_sprites += 1;
     }
 
     pub fn add_castle(&mut self, position: PositionF32) { 
-        let castle = self.assets.atlas.castle;
+        let castle = self.data.assets.atlas.castle;
         self.world.add_castle(position, castle);
-        self.common.total_sprites += 1;
+        self.data.common.total_sprites += 1;
     }
 
 }
 
-impl StoreLoad for GameData {
+impl StoreLoad for GameWorldData {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
-        self.common.store(writer);
-        self.assets.store(writer);
         self.world.store(writer);
-        self.terrain.store(writer);
-        self.navigation.store(writer);
-        self.behaviours.store(writer);
-        self.gui.store(writer);
+
+        let data = &mut self.data;
+        data.common.store(writer);
+        data.assets.store(writer);
+        data.terrain.store(writer);
+        data.navigation.store(writer);
+        data.behaviours.store(writer);
+        data.gui.store(writer);
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
-        let mut data = GameData::default();
+        let mut world_data = GameWorldData::default();
+
+        world_data.world = World::load(reader)?;
+
+        let data = &mut world_data.data;
         data.common = CommonParams::load(reader)?;
         data.assets = Assets::load(reader)?;
-        data.world = World::load(reader)?;
         data.terrain = Terrain::load(reader)?;
         data.navigation = NavigationState::load(reader)?;
         data.behaviours = BehaviourState::load(reader)?;
@@ -227,7 +246,7 @@ impl StoreLoad for GameData {
         data.gui.load_font(&data.assets)?;
         data.gui.load_style();
 
-        Ok(data)
+        Ok(world_data)
     }
 }
 

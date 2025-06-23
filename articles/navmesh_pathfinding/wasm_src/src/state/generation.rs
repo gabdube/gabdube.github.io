@@ -7,13 +7,15 @@ pub fn update(game: &mut GameClient) {
     common_inputs(game);
     set_insert_sprite(game);
 
-    if game.data.common.primary_mouse_just_pressed() {
-        if game.data.gui.position_outside_gui(game.data.common.mouse_position) {
+    let data = &mut game.world_data.data;
+    if data.common.primary_mouse_just_pressed() {
+        if data.gui.position_outside_gui(data.common.mouse_position) {
             primary_mouse_actions(game);
         }
     }
 
-    if game.data.common.mouse_moved() {
+    let data = &mut game.world_data.data;
+    if data.common.mouse_moved() {
         mouse_moved_actions(game);
     }
 }

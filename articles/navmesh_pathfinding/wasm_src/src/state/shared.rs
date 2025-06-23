@@ -5,95 +5,113 @@ use crate::GameClient;
 use super::GameInputType;
 
 pub(super) fn set_insert_sprite(game: &mut GameClient) {
+    let assets = &game.world_data.data.assets;
+    let world = &mut game.world_data.world;
+
     match game.state.input_type {
         GameInputType::PlaceCastle => {
-            set_insert_sprite_value(game, game.data.assets.atlas.castle);
+            set_insert_sprite_value(game, assets.atlas.castle);
         },
         GameInputType::PlaceHouse => {
-            set_insert_sprite_value(game, game.data.assets.atlas.house);
+            set_insert_sprite_value(game, assets.atlas.house);
         },
         GameInputType::PlacePawn => {
-            let sprite = game.data.assets.atlas.pawn_idle.sprite();
+            let sprite = assets.atlas.pawn_idle.sprite();
             set_insert_sprite_value(game, sprite);
         }
         GameInputType::Delete => {
-            game.data.world.clear_insert_sprite();
+            world.clear_insert_sprite();
         },
         GameInputType::Select => {
-            game.data.world.clear_insert_sprite();
+            world.clear_insert_sprite();
         }
     }
 }
 
 pub(super) fn set_insert_sprite_value(game: &mut GameClient, sprite: StaticSprite) {
-    let position = game.data.common.mouse_position;
-    if game.data.gui.position_outside_gui(position) {
-        game.data.world.set_insert_sprite(center_sprite(position, sprite.texcoord.size()), sprite);
+    let data = &game.world_data.data;
+    let world = &mut game.world_data.world;
+
+    let position = data.common.mouse_position;
+    if data.gui.position_outside_gui(position) {
+        world.set_insert_sprite(center_sprite(position, sprite.texcoord.size()), sprite);
     } else {
-        game.data.world.clear_insert_sprite();
+        world.clear_insert_sprite();
     }
 }
 
 pub(super) fn primary_mouse_actions(game: &mut GameClient) {
-    let common = &game.data.common;
+    let world_data = &mut game.world_data;
+    let data = &world_data.data;
+    let world = &mut world_data.world;
+
+    let common = &data.common;
     let position = common.mouse_position - common.view_offset;
+
     match game.state.input_type {
         GameInputType::PlaceCastle => {
-            if position_inside_terrain(&game.data.terrain, position) {
-                let sprite = game.data.assets.atlas.castle;
-                game.data.add_castle(center_sprite(position, sprite.texcoord.size()));
-                game.data.compute_navigation();
+            if position_inside_terrain(&data.terrain, position) {
+                let sprite = data.assets.atlas.castle;
+                world_data.add_castle(center_sprite(position, sprite.texcoord.size()));
+                world_data.compute_navigation();
             }
         },
         GameInputType::PlaceHouse => {
-            if position_inside_terrain(&game.data.terrain, position) {
-                let sprite = game.data.assets.atlas.house;
-                game.data.add_house(center_sprite(position, sprite.texcoord.size()));
-                game.data.compute_navigation();
+            if position_inside_terrain(&data.terrain, position) {
+                let sprite = data.assets.atlas.house;
+                world_data.add_house(center_sprite(position, sprite.texcoord.size()));
+                world_data.compute_navigation();
             }
         },
         GameInputType::PlacePawn => {
-            if position_inside_terrain(&game.data.terrain, position) {
-                let sprite = game.data.assets.atlas.pawn_idle.sprite();
-                game.data.add_pawn(center_sprite(position, sprite.texcoord.size()));
+            if position_inside_terrain(&data.terrain, position) {
+                let sprite = data.assets.atlas.pawn_idle.sprite();
+                world_data.add_pawn(center_sprite(position, sprite.texcoord.size()));
             }
         }
         GameInputType::Delete => {
-            game.data.delete_sprite_at_position(position);
-            game.data.compute_navigation();
+            world_data.delete_sprite_at_position(position);
+            world_data.compute_navigation();
         },
         GameInputType::Select => {
-            game.data.world.clear_selected_sprites();
-            game.data.world.select_sprite_at_position(position);
+            world.clear_selected_sprites();
+            world.select_sprite_at_position(position);
         }
     }
 }
 
 pub(super) fn secondary_mouse_actions(game: &mut GameClient) {
-    let common = game.data.common;
-    if game.data.gui.position_outside_gui(common.mouse_position) {
-        let world = &mut game.data.world;
+    use crate::data::behaviour::PawnBehaviour;
+    
+    let data = &mut game.world_data.data;
+    let world = &mut game.world_data.world;
+    let common = data.common;
+
+    if data.gui.position_outside_gui(common.mouse_position) {
         let selected_pawn = world.selected_sprites().first().copied();
         if let Some(selected_pawn) = selected_pawn {
             let position = common.mouse_position - common.view_offset;
-            game.data.behaviours.new_behaviour(crate::data::behaviour::PawnBehaviour::move_to_point(selected_pawn, position));
+            data.behaviours.new_behaviour(PawnBehaviour::move_to_point(selected_pawn, position));
         }
     }
 }
 
 pub(super) fn mouse_moved_actions(game: &mut GameClient) {
+    let world = &mut game.world_data.world;
+    let data = &mut game.world_data.data;
+    let common = &data.common;
+
     match game.state.input_type {
         GameInputType::Delete => {
-            let common = &game.data.common;
             let position = common.mouse_position - common.view_offset;
-            let hovered_new = game.data.world.sprite_at_position(position);
+            let hovered_new = world.sprite_at_position(position);
             let hovered_old = game.state.hovered_entity;
             if hovered_new != hovered_old {
                 if let Some(old) = hovered_old {
-                    game.data.world.clear_sprite_highlight(old);
+                    world.clear_sprite_highlight(old);
                 }
                 if let Some(new) = hovered_new {
-                    game.data.world.set_sprite_highlight(new, [255, 0, 0]);
+                    world.set_sprite_highlight(new, [255, 0, 0]);
                 }
                 game.state.hovered_entity = hovered_new;
             }
