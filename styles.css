@@ -10,7 +10,6 @@ body {
     background-color: rgb(48, 43, 40);
     color: rgb(224, 224, 224);
     height: 100vh;
-    overflow: hidden;
 }
 
 a { color: #a1cdff; text-decoration: none; }
@@ -90,59 +89,49 @@ footer > p {
     flex-direction: row;
     justify-content: center;
     gap: 15px;
-    max-width: 850px;
+    max-width: 1050px;
     margin: 20px auto;
     flex-wrap: wrap;
 }
 
 .gallery-item {
-    width: 200px;
-    height: 250px;
-    background-color: rgb(27, 27, 27);
+    width: 500px;
+    height: 500px;
     border-radius: 5px;
     text-decoration: none;
-    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.788);
+    background-color: rgb(30, 30, 30);
+    background-size: 500px 500px;
+    cursor: pointer;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
-.gallery-description {
-    color: rgb(224, 224, 224);
+.gallery-item-hover {
+    background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5));
 }
 
-.gallery-img {
-    margin: 5px;
-    width: 190px;
-    height: 175px;
-    border-radius: 5px 5px 0 0;
-    background-color: rgb(37, 37, 37);
+.gallery-item.no-content {
+    cursor: default;
 }
 
-.gallery-img > svg {
-    width: 190px;
-    height: 140px;
-    margin-top: 10px;
-    opacity: 0.5;
-}
-
-.gallery-description {
-    margin: 5px;
-}
-
-.article-name, .article-tags {
+.gallery-item > div > a {
+    width: 500px;
+    height: 500px;
     text-align: center;
-    margin: 0;
+    text-decoration: none;
+    font-size: 30px;
+    font-weight: bolder;
+    color: #FFF;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
-.article-name {
-    margin-bottom: 5px;
-}
-
-.article-name > a, .article-name > a:visited  {
-    color: rgb(224, 224, 224);
-}
-
-.article-tags {
-    font-size: 0.7em;
-}
 
 /* Articles */
 
@@ -167,6 +156,7 @@ body.article > main {
     grid-column-start: article;
     grid-column-end: canvas;
     overflow-y: auto;
+    border-right: 2px solid #111;
 }
 
 body.article > main > #content {
@@ -206,3 +196,25 @@ body.article > #demo {
     }
 }
 
+@media (max-width: 500px) {
+    .gallery-item > div > a {
+        width: 300px;
+        height: 300px;
+    }
+
+    .gallery-item {
+        width: 300px;
+        height: 300px;
+    }
+
+    #introduction {
+        margin: 20px 20px;
+        line-height: 30px;
+    }
+}
+
+/* Other */
+
+#demoToggle, #demoReset {
+    cursor: pointer;
+}

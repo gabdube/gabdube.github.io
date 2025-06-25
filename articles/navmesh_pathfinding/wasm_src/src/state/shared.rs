@@ -64,6 +64,7 @@ pub(super) fn primary_mouse_actions(game: &mut GameClient) {
             }
         },
         GameInputType::PlacePawn => {
+            dbg!("TEST");
             if position_inside_terrain(&data.terrain, position) {
                 let sprite = data.assets.atlas.pawn_idle.sprite();
                 world_data.add_pawn(center_sprite(position, sprite.texcoord.size()));
@@ -88,10 +89,12 @@ pub(super) fn secondary_mouse_actions(game: &mut GameClient) {
     let common = data.common;
 
     if data.gui.position_outside_gui(common.mouse_position) {
-        let selected_pawn = world.selected_sprites().first().copied();
-        if let Some(selected_pawn) = selected_pawn {
-            let position = common.mouse_position - common.view_offset;
-            data.behaviours.new_behaviour(PawnBehaviour::move_to_point(selected_pawn, position));
+        let selected = world.selected_sprites().first().copied();
+        if let Some(selected) = selected {
+            if world.is_pawn(selected) {
+                let position = common.mouse_position - common.view_offset;
+                data.behaviours.new_behaviour(PawnBehaviour::move_to_point(selected, position));
+            }
         }
     }
 }

@@ -167,6 +167,10 @@ impl GameWorldData {
             data.navigation.debug_navmesh(debug, debug_flags.show_cell_centers());
         }
 
+        if debug_flags.show_blocked_cells() {
+            data.navigation.debug_blocked_cells(debug);
+        }
+
         if debug_flags.show_pathfinding_graph() {
             data.navigation.debug_pathfinding_graph(debug);
         }

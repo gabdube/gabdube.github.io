@@ -136,6 +136,13 @@ impl World {
         self.inner.spawn((IsPawn, sprites, animate, PawnBehaviourState::idle()))
     }
 
+    pub fn is_pawn(&self, entity: Entity) -> bool {
+        match self.inner.query_one::<&IsPawn>(entity).ok() {
+            Some(mut v) => v.get().is_some(),
+            None => false
+        }
+    }
+
     pub fn get_pawn_position(&self, entity: Entity) -> Option<PositionF32> {
         let mut sprite_query = self.inner.query_one::<(&IsPawn, &mut BaseSprite)>(entity).ok()?;
         let (_, sprite) = sprite_query.get()?;

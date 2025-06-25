@@ -2,7 +2,6 @@ pub mod shared;
 pub mod generation;
 pub mod navigation;
 pub mod pathfinding;
-pub mod final_demo;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
 use crate::data::gui::GuiEvent;
@@ -17,7 +16,6 @@ pub enum GameStateValue {
     Generation,
     Navigation,
     Pathfinding,
-    FinalDemo
 }
 
 #[derive(Default, PartialEq, Eq, Copy, Clone, TryFromBytes, IntoBytes, Immutable)]
@@ -69,11 +67,13 @@ pub fn propagate_gui_events(client: &mut GameClient) {
 pub fn common_inputs(game: &mut GameClient) {
     let globals = game.world_data.data.common;
 
-    if globals.middle_mouse_just_pressed() {
-        game.state.scroll_view = true;
-    } else if globals.middle_mouse_released() {
-        game.state.scroll_view = false;
-    } 
+    if game.world_data.data.gui.position_outside_gui(globals.mouse_position) {
+        if globals.middle_mouse_just_pressed() {
+            game.state.scroll_view = true;
+        } else if globals.middle_mouse_released() {
+            game.state.scroll_view = false;
+        } 
+    }
     
     if globals.secondary_mouse_just_pressed() {
         shared::secondary_mouse_actions(game);

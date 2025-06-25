@@ -23,6 +23,9 @@ class GameInput {
     right_mouse_button: boolean|null = null;
     center_mouse_button: boolean|null = null;
 
+    tap_timeout: number = 0;
+    touchmove: boolean = false;
+
     keys: Map<string, boolean> = new Map();
 }
 
@@ -53,13 +56,13 @@ function init_handlers(engine: Engine) {
     const canvas = engine.renderer.canvas.element;
     const input_state = engine.input;
 
-    canvas.addEventListener("mousemove", (event) => { 
+    function on_mouse_move(event: MouseEvent) {
         input_state.mouse_position[0] = event.clientX - canvas.offsetLeft;
         input_state.mouse_position[1] = event.clientY - canvas.offsetTop;
         input_state.updates |= UPDATE_MOUSE_POSITION;
-    })
+    }
 
-    canvas.addEventListener("mousedown", (event) => {
+    function on_mouse_down(event: MouseEvent) {
         input_state.updates |= UPDATE_MOUSE_BUTTONS;
 
         if (event.button === 0) { input_state.left_mouse_button = true; }
@@ -67,24 +70,84 @@ function init_handlers(engine: Engine) {
         else if (event.button === 2) { input_state.right_mouse_button = true; }
         
         event.preventDefault();
-    })
+    }
 
-    canvas.addEventListener("mouseup", (event) => {
+    function on_mouse_up(event: MouseEvent) {
         input_state.updates |= UPDATE_MOUSE_BUTTONS;
 
         if (event.button === 0) { input_state.left_mouse_button = false; }
         else if (event.button === 1) { input_state.center_mouse_button = false; }
         else if (event.button === 2) { input_state.right_mouse_button = false; }
+
+        event.preventDefault();
+    }
+
+    canvas.addEventListener("mousemove", on_mouse_move)
+    canvas.addEventListener("mousedown", on_mouse_down)
+    canvas.addEventListener("mouseup", on_mouse_up)
+
+    canvas.addEventListener("touchstart", (event) => {
+        const touch = event.touches;
+        if (touch.length == 1) {
+            if (input_state.tap_timeout !== 0) {
+                on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+                
+                const event = new MouseEvent("mousedown", { button: 2 });
+                on_mouse_down(event);
+                setTimeout(() => on_mouse_up(event), 50);
+                
+                clearTimeout(input_state.tap_timeout);
+                input_state.tap_timeout = 0;
+                return
+            }
+
+            // Single tap
+            input_state.tap_timeout = setTimeout(() => {
+                on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+                
+                const event = new MouseEvent("mousedown", { button: 0 });
+                on_mouse_down(event);
+                setTimeout(() => on_mouse_up(event), 50);
+
+                clearTimeout(input_state.tap_timeout);
+                input_state.tap_timeout = 0;
+            }, 300);
+        }
+    });
+    canvas.addEventListener("touchend", (event) => {
+        if (input_state.touchmove) {
+            // MAAAANN I hate mobile devices
+            const event1 = new MouseEvent("mousedown", { button: 0 });
+            on_mouse_down(event1);
+            setTimeout(() => on_mouse_up(event1), 50);
+
+            const event2 = new MouseEvent("mousedown", { button: 2 });
+            on_mouse_down(event2);
+            setTimeout(() => on_mouse_up(event2), 50);
+
+            input_state.touchmove = false;
+        }
         
         event.preventDefault();
-    })
+    });
+    canvas.addEventListener("touchmove", (event) => {
+        const touch = event.touches;
+        
+        clearTimeout(input_state.tap_timeout);
+        input_state.tap_timeout = 0;
+
+        if (touch.length == 1) {
+            on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+            input_state.touchmove = true;
+        }
+    });
 
     canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
 
     window.addEventListener("keydown", (event) => {
         if (event.code === "KeyR") {
             engine.refresh_client = true;
-        } else if (event.code == "Space") {
+        } else if (event.code == "KeyD") {
             toggleDemo();   
         }
 
@@ -302,14 +365,29 @@ function run(engine: Engine) {
 }
 
 async function init_app() {
+    const demo = document.getElementById("demo") as HTMLCanvasElement;
+    if (demo.clientWidth == 0 || demo.clientHeight == 0) {
+        return true;
+    }
+
     const engine = await init();
     if (!engine) {
         console.log("Failed to initialize application");
-        return;
+        return false;
     }
 
     boundedRun = run.bind(null, engine);
     boundedRun();
+
+    window.removeEventListener("resize", init_app);
+    return false;
 }
 
-init_app();
+async function init_on_resize() {
+    const retry = await init_app();
+    if (retry) {
+        window.addEventListener("resize", init_app);
+    }
+}
+
+init_on_resize();

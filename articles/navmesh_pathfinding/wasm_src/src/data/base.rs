@@ -40,6 +40,7 @@ impl DebugFlags {
     pub const SHOW_PATH_ROUGH: u32 = 0x20;
     pub const SHOW_PATH_FUNNEL: u32 = 0x40;
     pub const SHOW_PATH: u32 = 0x80;
+    pub const SHOW_BLOCKED_CELLS: u32 = 0x100;
 
     flags!(show_navmesh, Self::SHOW_NAVMESH);
     flags!(show_cell_centers, Self::SHOW_CELL_CENTERS);
@@ -48,6 +49,7 @@ impl DebugFlags {
     flags!(show_pathfinding_graph, Self::SHOW_PATHFINDING_GRAPH);
     flags!(show_path_funnel, Self::SHOW_PATH_FUNNEL);
     flags!(show_path_rough, Self::SHOW_PATH_ROUGH);
+    flags!(show_blocked_cells, Self::SHOW_BLOCKED_CELLS);
 
     pub fn and(&mut self, value: u32) -> Self {
         self.0 &= value;

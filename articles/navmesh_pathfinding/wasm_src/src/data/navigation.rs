@@ -48,11 +48,12 @@ struct NavNode {
     pub n0: NavNodeNeighbor,
     pub n1: NavNodeNeighbor,
     pub n2: NavNodeNeighbor,
+    pub disconnected: u32
 }
 
 impl NavNode {
     pub const fn is_disconnected(&self) -> bool { 
-        self.n0.triangle.is_outside() && self.n1.triangle.is_outside() && self.n2.triangle.is_outside()
+        self.disconnected > 0
     }
 
     pub fn gate(&self, from: usize) -> [PositionF32; 2] {
@@ -149,10 +150,13 @@ impl NavigationState {
         for (_, (sprite, _)) in sprites.iter() {
             let aabb = sprite.rect();
             blocked_area.push(aabb);
-            points.push(pos(aabb.left, aabb.top));
-            points.push(pos(aabb.left, aabb.bottom));
-            points.push(pos(aabb.right, aabb.top));
-            points.push(pos(aabb.right, aabb.bottom));
+
+            // We don't want the collisions box to be right on top of the objects, so we add some padding (in pixels)
+            let padding = 2.0;
+            points.push(pos(aabb.left-padding, aabb.top-padding));
+            points.push(pos(aabb.left-padding, aabb.bottom+padding));
+            points.push(pos(aabb.right+padding, aabb.top-padding));
+            points.push(pos(aabb.right+padding, aabb.bottom+padding));
         }
     }
 
@@ -240,15 +244,6 @@ impl NavigationState {
         let node_count = self.graph.len();
         let blocked_area_count = self.blocked_areas.len();
 
-        fn disconnect_node(node: &mut NavNode) {
-            node.n0.triangle = Triangle::outside();
-            node.n0.distance = f32::INFINITY;
-            node.n1.triangle = Triangle::outside();
-            node.n1.distance = f32::INFINITY;
-            node.n2.triangle = Triangle::outside();
-            node.n2.distance = f32::INFINITY;
-        }
-
         fn disconnect_node_neighbors(nodes: &mut Vec<NavNode>, from: Triangle, n0: Triangle, n1: Triangle, n2: Triangle) {
             let nodes_indices = [n0.0 as usize, n1.0 as usize, n2.0 as usize];
             for i in nodes_indices {
@@ -256,22 +251,20 @@ impl NavigationState {
                     continue;
                 }
 
-                let node = &mut nodes[i];
-                if node.n0.triangle == from {
-                    node.n0.triangle = Triangle::outside();
-                    node.n0.distance = f32::INFINITY;
-                } else if node.n1.triangle == from {
-                    node.n1.triangle = Triangle::outside();
-                    node.n1.distance = f32::INFINITY;
-                } else if node.n2.triangle == from {
-                    node.n2.triangle = Triangle::outside();
-                    node.n2.distance = f32::INFINITY;
+                let neighbor = &mut nodes[i];
+                if neighbor.n0.triangle == from {
+                    neighbor.n0.distance = f32::INFINITY;
+                } else if neighbor.n1.triangle == from {
+                    neighbor.n1.distance = f32::INFINITY;
+                } else if neighbor.n2.triangle == from {
+                    neighbor.n2.distance = f32::INFINITY;
                 }
             }
         }
 
         // Brute force algorithm. There are better way to handle this.
         // For example by querying the triangle inside the blocked area using `triangle_at`
+        // Or just disconnecting the nodes while generating the nav graph
         for blocked_index in 0..blocked_area_count {
             let blocked = self.blocked_areas[blocked_index];
             for node_index in 0..node_count {
@@ -279,7 +272,7 @@ impl NavigationState {
                 let [p0, p1, p2] = self.triangle_points(node.triangle);
                 let center = pos((p0.x + p1.x + p2.x) / 3.0, (p0.y + p1.y + p2.y) / 3.0);
                 if blocked.point_inside(center) {
-                    disconnect_node(&mut self.graph[node_index]);
+                    self.graph[node_index].disconnected = 1;
                     disconnect_node_neighbors(&mut self.graph, node.triangle, node.n0.triangle, node.n1.triangle, node.n2.triangle);
                 }
             }
@@ -354,15 +347,15 @@ impl NavigationState {
     //
 
     fn get_pathfinding_nodes(&self, start: PositionF32, end: PositionF32) -> Option<[usize; 2]> {
-        let start = self.triangle_at(start, 0).unwrap_or(Triangle::outside());
-        let end = self.triangle_at(end, 0).unwrap_or(Triangle::outside());
-        if start.is_outside() || end.is_outside() {
+        let start_triangle = self.triangle_at(start, 0).unwrap_or(Triangle::outside());
+        let end_triangle = self.triangle_at(end, 0).unwrap_or(Triangle::outside());
+        if start_triangle.is_outside() || end_triangle.is_outside() {
             return None;
         }
 
-        let start = start.as_graph_node_index();
-        let end = end.as_graph_node_index();
-        if self.graph[start].is_disconnected() || self.graph[end].is_disconnected() {
+        let start = start_triangle.as_graph_node_index();
+        let end = end_triangle.as_graph_node_index();
+        if self.graph[end].is_disconnected() {
             return None;
         }
 
@@ -417,6 +410,7 @@ impl NavigationState {
             }
         }
 
+
         // A list of processed nodes that stores the cost to reach that node and the index of the parent node
         // Nodes can be walked back to build the final path (see `build_final_path`)
         let mut processed: HashMap<usize, PathComputeNodeParent> = HashMap::new();
@@ -424,7 +418,7 @@ impl NavigationState {
         // A Priority queue to process the nodes from the smallest cost to the largest
         let mut to_see: BinaryHeap<PathComputeNode> = BinaryHeap::new();
 
-        to_see.push(PathComputeNode { node_index: start_node_index, cost_to_start: 0.0, estimated_cost_to_end: 0.0, came_from: 3 });
+        to_see.push(PathComputeNode { node_index: start_node_index, cost_to_start: 0.0, estimated_cost_to_end: 0.0, came_from: usize::MAX });
         processed.insert(start_node_index, PathComputeNodeParent { index: start_node_index, parent_index: start_node_index, gate: Default::default(), cost_to_start: 0.0 });
 
         while let Some(cell) = to_see.pop() {
@@ -672,8 +666,19 @@ impl NavigationState {
         }
     }
 
+    pub fn debug_blocked_cells(&self, debug: &mut super::DebugState) {
+        for node in self.graph.iter() {
+            if !node.is_disconnected() {
+                continue;
+            }
+
+            let [v0, v1, v2] = self.triangle_points(node.triangle);
+            debug.fill_triangle(v0, v1, v2, [255, 0, 0, 100]);
+        }
+    }
+
     pub fn debug_triangle_at_position(&self, debug: &mut super::DebugState, position: PositionF32) {
-        let triangle = self.triangle_at(position, 49);
+        let triangle = self.triangle_at(position, 0);
         if let Some(triangle) = triangle {
             let [v0, v1, v2] = self.triangle_points(triangle);
             debug.fill_triangle(v0, v1, v2, [255, 255, 255, 100]);
@@ -726,23 +731,26 @@ impl NavigationState {
         while i < triangle_count {
             let node = self.graph[i];
 
-            let n0 = node.n0.triangle.0;
-            let n1 = node.n1.triangle.0;
-            let n2 = node.n2.triangle.0;
+            let n0 = node.n0;
+            let n1 = node.n1;
+            let n2 = node.n2;
 
-            if n0 != u32::MAX || n1 != u32::MAX || n2 != u32::MAX {
-                debug.draw_point(node.center, 3.0, center_color);
+            if node.is_disconnected() {
+                i += 1;
+                continue;
             }
 
-            if n0 != u32::MAX && n0 > (i as u32) {
+            debug.draw_point(node.center, 3.0, center_color);
+
+            if !n0.triangle.is_outside() && n0.distance != f32::INFINITY  && n0.triangle.as_graph_node_index() > i {
                 debug.draw_line(node.center, node.n0.center, center_color);
             }
 
-            if n1 != u32::MAX && n1 > (i as u32) {
+            if !n1.triangle.is_outside() && n1.distance != f32::INFINITY && n1.triangle.as_graph_node_index() > i {
                 debug.draw_line(node.center, node.n1.center, center_color);
             }
 
-            if n2 != u32::MAX && n2 > (i as u32) {
+            if !n2.triangle.is_outside() && n2.distance != f32::INFINITY && n2.triangle.as_graph_node_index() > i {
                 debug.draw_line(node.center, node.n2.center, center_color);
             }
 

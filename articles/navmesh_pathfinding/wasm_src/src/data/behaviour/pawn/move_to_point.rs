@@ -75,7 +75,10 @@ fn startup(entity: Entity, state: &mut PawnBehaviourState, params: MoveToPointPa
     };
 
     let mut out_path = Vec::with_capacity(16);
-    nav.compute_path(start_position, end_position, &mut out_path);
+    if !nav.compute_path(start_position, end_position, &mut out_path) {
+        destination_reached(entity, state, params);
+        return;
+    }
 
     world.set_pawn_animation(entity, assets.atlas.pawn_walk.animate());
 

@@ -16,7 +16,9 @@ impl crate::store::StoreLoad for World {
         store_pawns(writer, &mut self.inner);
         store_actors::<&IsHouse>(writer, &mut self.inner);
         store_actors::<&IsCastle>(writer, &mut self.inner);
+        store_selected(writer, self);
         writer.write_option(&self.insert_sprite);
+
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
@@ -24,6 +26,7 @@ impl crate::store::StoreLoad for World {
         spawn_pawns(reader, &mut world.inner)?;
         spawn_actors::<IsHouse>(reader, &mut world.inner);
         spawn_actors::<IsCastle>(reader, &mut world.inner);
+        load_selected(reader, &mut world)?;
         world.insert_sprite = reader.try_read_option()?;
 
         Ok(world)
@@ -57,6 +60,15 @@ fn store_actors<T: hecs::Query>(writer: &mut crate::store::StoreWriter, world: &
     sprites.clear();
 }
 
+fn store_selected(writer: &mut crate::store::StoreWriter, world: &mut World) {
+    let selected_count = world.selected_sprites.len() as u32;
+    writer.write(&selected_count);
+
+    for &entity in world.selected_sprites.iter() {
+        writer.write_entity_option(Some(entity));
+    }
+}
+
 fn spawn_pawns(reader: &mut crate::store::StoreReader, world: &mut HecsWorld) -> Result<(), crate::error::Error> {
     let pawns_count: u32 = reader.try_read()?;
     world.reserve::<(IsPawn, BaseSprite, AnimationState, PawnBehaviourState)>(pawns_count);
@@ -81,4 +93,17 @@ fn spawn_actors<T: hecs::Component + Default>(
         let entity = Entity::from_bits(transmute!(actor.entity)).expect("Corrupted entity data");
         world.spawn_at(entity, (T::default(), HasCollision, actor.sprite));
     }
+}
+
+fn load_selected(reader: &mut crate::store::StoreReader, world: &mut World) -> Result<(), crate::error::Error> {
+    let selected_count: u32 = reader.try_read()?;
+    world.selected_sprites = Vec::with_capacity(selected_count as usize);
+
+    for _ in 0..selected_count {
+        if let Ok(Some(entity)) = reader.try_read_entity_option() {
+            world.selected_sprites.push(entity);
+        }
+    }
+
+    Ok(())
 }

@@ -89,6 +89,18 @@ fn preload_all_by_extensions(files: &mut HashMap<String, FileType>, extension: &
     }
 }
 
+fn preload_all_capsules(files: &mut HashMap<String, FileType>) {
+    let patterns = ["./capsules/*.png", "./capsules/*.webp"];
+    for pattern in patterns.iter() {
+        for file in glob::glob(&pattern).unwrap().filter_map(Result::ok) {
+            if let Some(local_path) = file.to_str() {
+                let web_path = format!("/{}", local_path).replace("\\", "/");
+                load_bin_file(files, &web_path, local_path);
+            }
+        }
+    }
+}
+
 fn preload_files() -> SharedAssetsCollection {
     let mut collection = AssetsCollection::default();
 
@@ -105,6 +117,8 @@ fn preload_files() -> SharedAssetsCollection {
     preload_all_by_extensions(f, "csv", true);
     preload_all_by_extensions(f, "wasm", false);
     preload_all_by_extensions(f, "png", false);
+
+    preload_all_capsules(f);
 
     Arc::new(Mutex::new(collection))
 }

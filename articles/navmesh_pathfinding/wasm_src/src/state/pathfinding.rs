@@ -9,17 +9,17 @@ pub fn update(game: &mut GameClient) {
     let world = &mut game.world_data.world;
     let common = data.common;
 
-    if common.primary_mouse_just_pressed() {
-        if data.gui.position_outside_gui(common.mouse_position) {
-            let position = common.mouse_position - common.view_offset;
-            world.clear_selected_sprites();
-            world.select_sprite_at_position(position);
+    if data.gui.position_outside_gui(common.mouse_position) {
+        if common.primary_mouse_just_pressed() {
+                let position = common.mouse_position - common.view_offset;
+                world.clear_selected_sprites();
+                world.select_sprite_at_position(position);
         }
-    }
 
-    if world.selected_sprites().len() > 0 {
-        if common.debug_flags.debug_any_path() {
-            debug_pathfinding(game);
+        if world.selected_sprites().len() > 0 {
+            if common.debug_flags.debug_any_path() {
+                debug_pathfinding(game);
+            }
         }
     }
 }

@@ -20,11 +20,11 @@
   <main>
     <div id="content">
       <div>
-        <p>Pathfinding is complex. Most game engine already provide generic solutions that handle all the messy parts for you. However, if you are building your own engine, this is something you will have to code (mostly) from scratch.</p>
-        <p>The good news is there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
-        <p>The bad news is... theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
-        <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh to generating the final path. Using Rust of course.</p>
-        <p>(Note that the interactive demo will only be visible if your screen is >= 1000px)</p>
+        <p>Pathfinding is complex. Most game engine already provide generic solutions that handle all the messy parts for you. However, if you are building your own, this is something you will have to code (mostly) from scratch.</p>
+        <p>Good news, there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
+        <p>Bad news, theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
+        <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh, computing the optimal path using A-star, to generating the final path. Using Rust of course.</p>
+        <p>It is MUCH better to run the demo on a desktop and the demo will only start with a screen width >= 1000px</p>
         <p>
           The code for this demo is available on github <a href="https://github.com/gabdube/gabdube.github.io/tree/master/articles/navmesh_pathfinding" target="_blank">HERE</a> and all of the pathfinding logic
           is in <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs" target="_blank">THIS</a> file
@@ -34,11 +34,12 @@
       <div>
         <p>Controls</p>
         <ul>
-          <li>Left (or primary) mouse click to select sprites</li>
-          <li>Right (or secondary) mouse click to move selected pawn</li>
-          <li>Middle mouse to pan the world</li>
-          <li>[Space] to toggle the demo visibility</li>
-          <li>[R] to reset the demo</li>
+          <li>Primary mouse click / single tap to select sprites, interact with the gui</li>
+          <li>Secondary mouse click / double tap to move selected pawn</li>
+          <li>Single finger drag to simulate a mouse move</li>
+          <li>Middle mouse / double finger drag to pan the world</li>
+          <li>[D] or <a id="demoToggle">click HERE</a> to toggle the demo visibility</li>
+          <li>[R] or <a id="demoReset">click HERE</a> to reset the demo</li>
         </ul>
       </div>
   

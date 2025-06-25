@@ -81,7 +81,6 @@ impl Gui {
                     GameStateValue::Generation => components::generation_panel(ui, params),
                     GameStateValue::Navigation => components::navigation_panel(ui, params),
                     GameStateValue::Pathfinding => components::pathfinding_panel(ui, params),
-                    GameStateValue::FinalDemo => components::final_panel(ui, params),
                     _ => {}
                 }
             })
@@ -119,10 +118,11 @@ impl Gui {
         let cloned;
         if self.events.len() > 0 {
             cloned = self.events.clone();
+            self.events.clear();
         } else {
             cloned = Vec::new();
         }
-        self.events.clear();
+
         cloned
     }
 
@@ -158,7 +158,6 @@ impl Gui {
     pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
         use egui::{Event, Modifiers, Key};
         let key = Key::from_name(key_name);
-
         if let Some(key) = key {
             self.input.events.push(Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: Modifiers::default() })
         }
@@ -239,7 +238,7 @@ impl Default for Gui {
             ctx: egui::Context::default(),
             input: Box::default(),
             output: Box::default(),
-            height: 300.0,
+            height: 200.0,
             pixel_per_point: 1.0,
             max_texture_size: 2048,
             view: [0.0; 4],

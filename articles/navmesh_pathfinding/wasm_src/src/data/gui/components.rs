@@ -23,7 +23,6 @@ pub fn left_panel(ui: &mut egui::Ui, params: LeftPanelParams) {
         .show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 let mut game_state_update = false;
-                game_state_update |= ui.selectable_value(params.state, GameStateValue::FinalDemo, "Final Demo").clicked();
                 game_state_update |= ui.selectable_value(params.state, GameStateValue::Generation, "Generation").clicked();
                 game_state_update |= ui.selectable_value(params.state, GameStateValue::Navigation, "Navigation").clicked();
                 game_state_update |= ui.selectable_value(params.state, GameStateValue::Pathfinding, "Pathfinding").clicked();
@@ -42,9 +41,6 @@ pub fn left_panel(ui: &mut egui::Ui, params: LeftPanelParams) {
                             let flags = DebugFlags::SHOW_NAVMESH | DebugFlags::SHOW_PATHFINDING_GRAPH |
                                         DebugFlags::SHOW_PATH_ROUGH | DebugFlags::SHOW_PATH;
                             params.events.push(GuiEvent::SetDebugFlags(params.debug_flags.and(flags)));
-                        },
-                        GameStateValue::FinalDemo => {
-                            params.events.push(GuiEvent::SetDebugFlags(params.debug_flags.and(0)));
                         },
                         _ => {},
                     }
@@ -93,7 +89,8 @@ pub fn generation_panel(ui: &mut egui::Ui, params: PanelParams) {
 pub fn navigation_panel(ui: &mut egui::Ui, params: PanelParams) {
     ui.vertical(|ui| {
         bitflag_checkbox(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH, 0, DebugFlags::SHOW_CELL_CENTERS);
-        bitflag_checkbox(ui, params.events, "Show cell centers", params.debug_flags,  DebugFlags::SHOW_CELL_CENTERS, DebugFlags::SHOW_NAVMESH, 0);
+        bitflag_checkbox(ui, params.events, "Show cell centers", params.debug_flags, DebugFlags::SHOW_CELL_CENTERS, DebugFlags::SHOW_NAVMESH, 0);
+        bitflag_checkbox(ui, params.events, "Show blocked cells", params.debug_flags, DebugFlags::SHOW_BLOCKED_CELLS, 0, 0);
         bitflag_checkbox(ui, params.events, "Show triangle lookup", params.debug_flags, DebugFlags::SHOW_TRIANGLE_LOOKUP, 0, DebugFlags::SHOW_TRIANGLE_LOOKUP_PATH);
         bitflag_checkbox(ui, params.events, "Debug triangle lookup", params.debug_flags, DebugFlags::SHOW_TRIANGLE_LOOKUP_PATH, DebugFlags::SHOW_TRIANGLE_LOOKUP, 0);
     });
@@ -106,26 +103,6 @@ pub fn pathfinding_panel(ui: &mut egui::Ui, params: PanelParams) {
         bitflag_checkbox2(ui, params.events, "Debug pathfinding", params.debug_flags, DebugFlags::SHOW_PATH_ROUGH, DebugFlags::SHOW_PATH | DebugFlags::SHOW_PATH_FUNNEL);
         bitflag_checkbox2(ui, params.events, "Debug pathfinding funnel", params.debug_flags, DebugFlags::SHOW_PATH_FUNNEL, DebugFlags::SHOW_PATH | DebugFlags::SHOW_PATH_ROUGH);
         bitflag_checkbox2(ui, params.events, "Debug pathfinding (smoothed)", params.debug_flags, DebugFlags::SHOW_PATH, DebugFlags::SHOW_PATH_ROUGH | DebugFlags::SHOW_PATH_FUNNEL);
-    });
-}
-
-pub fn final_panel(ui: &mut egui::Ui, params: PanelParams) {
-    ui.vertical(|ui| {
-        ui.horizontal(|ui| {
-            if ui.button("Reset World").clicked() {
-                params.events.push(GuiEvent::ResetWorld);
-            }
-
-            let mut input_update = false;
-            input_update |= ui.selectable_value(params.state_input, GameInputType::Select, "Select").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::Delete, "Delete").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::PlacePawn, "Add Pawn").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceCastle, "Add Castle").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceHouse, "Add House").clicked();
-            if input_update {
-                params.events.push(GuiEvent::SetInputType(*params.state_input));
-            }
-        });
     });
 }
 
