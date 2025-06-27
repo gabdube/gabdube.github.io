@@ -285,6 +285,7 @@ fn response_from_url(url: &str, data: FileType) -> Response {
         "css"       => Response::from_data("text/css; charset=utf-8", data.bin()),
         "js"        => Response::from_data("text/javascript; charset=utf-8", data.bin()),
         "wasm"      => Response::from_data("application/wasm", data.bin()),
+        "png"       => Response::from_data("image/png", data.bin()),
         _           => Response::from_data("application/octet-stream", data.bin())
     }
 }

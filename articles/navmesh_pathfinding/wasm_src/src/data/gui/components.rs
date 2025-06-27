@@ -14,6 +14,7 @@ pub(super) struct PanelParams<'a> {
     pub events: &'a mut Vec<GuiEvent>,
     pub debug_flags: &'a mut DebugFlags,
     pub state_input: &'a mut GameInputType,
+    pub gui_width: f32,
 }
 
 pub fn left_panel(ui: &mut egui::Ui, params: LeftPanelParams) {
@@ -66,21 +67,48 @@ pub fn right_panel<F>(ui: &mut egui::Ui, width: f32, callback: F)
 
 pub fn generation_panel(ui: &mut egui::Ui, params: PanelParams) {
     ui.vertical(|ui| {
-        ui.horizontal(|ui| {
-            if ui.button("Reset World").clicked() {
-                params.events.push(GuiEvent::ResetWorld);
-            }
-            
+        if params.gui_width < 700.0 {
             let mut input_update = false;
-            input_update |= ui.selectable_value(params.state_input, GameInputType::Select, "Select").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::Delete, "Delete").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::PlacePawn, "Add Pawn").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceCastle, "Add Castle").clicked();
-            input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceHouse, "Add House").clicked();
+
+            ui.horizontal(|ui| {
+                if ui.button("Reset World").clicked() {
+                    params.events.push(GuiEvent::ResetWorld);
+                }
+            });
+
+            ui.horizontal(|ui| {
+                input_update |= ui.selectable_value(params.state_input, GameInputType::Select, "Select").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::Delete, "Delete").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::PlacePawn, "Add Pawn").clicked();
+            });
+
+            ui.horizontal(|ui| {
+                input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceCastle, "Add Castle").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceHouse, "Add House").clicked();
+            });
+
             if input_update {
                 params.events.push(GuiEvent::SetInputType(*params.state_input));
             }
-        });
+        } else {
+            ui.horizontal(|ui| {
+                if ui.button("Reset World").clicked() {
+                    params.events.push(GuiEvent::ResetWorld);
+                }
+                
+                let mut input_update = false;
+                input_update |= ui.selectable_value(params.state_input, GameInputType::Select, "Select").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::Delete, "Delete").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::PlacePawn, "Add Pawn").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceCastle, "Add Castle").clicked();
+                input_update |= ui.selectable_value(params.state_input, GameInputType::PlaceHouse, "Add House").clicked();
+                if input_update {
+                    params.events.push(GuiEvent::SetInputType(*params.state_input));
+                }
+            });
+        }
+
+      
         ui.separator();
         bitflag_checkbox(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH, 0, DebugFlags::SHOW_CELL_CENTERS);
     });

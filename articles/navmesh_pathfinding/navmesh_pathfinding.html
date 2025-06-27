@@ -15,16 +15,18 @@
     <h2>2D Navmesh Pathfinding</h2>
     <div class="header-nav">
       <div><a href="/index.html">Home</a></div>
+      <div><a id="toggleDemo">Toggle Demo</a></div>
+      <div><a id="resetDemo">Reset Demo</a></div>
     </div>
   </header>
   <main>
     <div id="content">
       <div>
-        <p>Pathfinding is complex. Most game engine already provide generic solutions that handle all the messy parts for you. However, if you are building your own, this is something you will have to code (mostly) from scratch.</p>
+        <p>Pathfinding is complex. Most game engine already provide a generic solution that handle all the messy parts. However, if you are building your own, this is something you will have to code (mostly) from scratch.</p>
         <p>Good news, there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
         <p>Bad news, theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
         <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh, computing the optimal path using A-star, to generating the final path. Using Rust of course.</p>
-        <p>It is MUCH better to run the demo on a desktop and the demo will only start with a screen width >= 1000px</p>
+        <p>It is MUCH better to run the demo on a desktop. If your screen width is smaller than 1600 pixels, the demo will be hidden by default.</p>
         <p>
           The code for this demo is available on github <a href="https://github.com/gabdube/gabdube.github.io/tree/master/articles/navmesh_pathfinding" target="_blank">HERE</a> and all of the pathfinding logic
           is in <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs" target="_blank">THIS</a> file
@@ -38,66 +40,340 @@
           <li>Secondary mouse click / double tap to move selected pawn</li>
           <li>Single finger drag to simulate a mouse move</li>
           <li>Middle mouse / double finger drag to pan the world</li>
-          <li>[D] or <a id="demoToggle">click HERE</a> to toggle the demo visibility</li>
-          <li>[R] or <a id="demoReset">click HERE</a> to reset the demo</li>
+          <li>[D] or [Toggle Demo] header label to toggle the demo visibility</li>
+          <li>[R] or [Reset Demo] header label to reset the demo</li>
         </ul>
       </div>
   
       <div>
         <p>Special thanks to:</p>
         <ul>
-          <li><a href="https://www.redblobgames.com/pathfinding/a-star/implementation.html">Red Blob Games</a>: For the best A* Algorithm guide available online</li>
-          <li><a href="https://pixelfrog-assets.itch.io/">PixelFrog</a>: For the amazing assets used in this article</li>
-          <li><a href="https://github.com/mapbox/delaunator">Delaunator</a>: The great library that handles the delaunay triangulation</li>
-          <li><a href="https://github.com/mourner/delaunator-rs">Delaunator-rs</a>: The rust port of delaunator</li>
-          <li><a href="https://digestingduck.blogspot.com/2010/03/simple-stupid-funnel-algorithm.html">Simple stupid funnel algorithm</a>: For the path smoothing algorithm</li>
+          <li><a href="https://www.redblobgames.com/pathfinding/a-star/implementation.html" target="_blank">Red Blob Games</a>: For the best A* Algorithm guide available online</li>
+          <li><a href="https://pixelfrog-assets.itch.io/" target="_blank">PixelFrog</a>: For the amazing assets used in this article</li>
+          <li><a href="https://github.com/mapbox/delaunator" target="_blank">Delaunator</a>: The great library that handles the Delaunay triangulation</li>
+          <li><a href="https://github.com/mourner/delaunator-rs" target="_blank">Delaunator-rs</a>: The rust port of delaunator</li>
+          <li><a href="https://digestingduck.blogspot.com/2010/03/simple-stupid-funnel-algorithm.html" target="_blank">Simple stupid funnel algorithm</a>: For the path smoothing algorithm</li>
         </ul>
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hTriangulate" class="article-h"><a href="#hTriangulate">Using delaunay triangulation to generate the base navmesh</a></h2>
+        <h2 id="hTriangulate" class="article-h"><a href="#hTriangulate">Using Delaunay triangulation to generate the base navmesh</a></h2>
           
         <p>
+          On its own, a navmesh is really just a 2D mesh. In the "Generation" demo you can toggle the navmesh using the "Show navmesh" check box.
+        </p>
+        
+        <p>
+          In most game engines, building a navmesh is not done manually. Usually there is a "baking" feature that takes 2D or 3D objects as inputs, and then generates the navmesh.
+          The overall process in this article should be almost identical to this.
+        </p>
 
+        <p>
+          The best way to generate a navmesh is called <a href="https://en.wikipedia.org/wiki/Delaunay_triangulation" target="_blank">Delaunay triangulation</a>. 
+          With a dynamic demo, this must be done in real-time; however, Delaunay triangulation is cheap to compute and can easily process thousands of vertices in only a few ms, even on less powerful hardware.
+          Moreover, you don't need to implement Delaunay triangulation from scratch; there are many libraries, in every language, ready to be used. Also, most of them are small, self contained, and REALLY optimized.
+        </p>
+
+        <p>
+          The Rust  Delaunay triangulation crates are: <a href="https://crates.io/crates/delaunator" target="_blank">delaunator</a>, <a href="https://crates.io/crates/cdt" target="_blank">cdt</a>, and
+          <a href="https://crates.io/crates/spade" target="_blank">spade</a>. 
+          Spade has a <a href="https://github.com/Stoeoef/spade/blob/master/delaunay_compare/README.md" target="_blank">document comparing the features between each of them</a>.
+          Of those three, spade is the most feature-rich.
+        </p>
+
+        <p>
+          In this demo, I'm using delaunator because it is the most simple. The source code consists of a  <a href="https://docs.rs/delaunator/1.0.2/src/delaunator/lib.rs.html#1-635"></a>single file with approximately 600 lines of code</a>.
+          However, this simplicity comes with limitations, as detailed in the <b>Limitations & Steps Forward</b> section.
+        </p>
+
+        <p>
+          Using delaunator, the generation is done by building a list of points (also called vertices), and the calling the triangulate function:
+
+          <p>
+            <pre class="hljs" style="display: block; overflow-x: auto; padding: 0.5em; background: rgb(43, 43, 43); color: rgb(186, 186, 186);"><span class="hljs-keyword" >pub</span> <span class="hljs-function"><span class="hljs-keyword" >fn</span> <span class="hljs-title">triangulate</span></span>(points: &amp;[<span>Point</span>]) -&gt; <span>Triangulation</span></pre>
+          </p>
+        </p>
+
+        <p>
+          When working with sprites, first add all the corners of the world and then, for each sprite with collisions, add the bounding box coordinates.
+          We're also saving the bounding boxes of each one of those sprites, we will need them to remove the unreachable nodes in the following steps.
+        </p>
+
+        <div class="image-holder">
+          <img src="assets/images/1.png" loading="lazy" alt="navmesh example"></img>
+        </div>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="hTriOut" class="article-h"><a href="#hTriOut">Understanding the triangulation output</a></h2>
+
+        <p>
+          The output of the triangulation is a doubly connected edge list <a href="https://en.wikipedia.org/wiki/Doubly_connected_edge_list" target="_blank">(also known as DCEL)</a>.
+          It is defined as:
+        </p>
+
+        <p>
+<pre class="hljs" style="display: block; overflow-x: auto; padding: 0.5em; background: rgb(43, 43, 43); color: rgb(186, 186, 186);">
+<span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword" >struct</span> <span class="hljs-title">Triangulation</span></span> {
+    <span class="hljs-comment">/// A vector of point indices where each triple represents a Delaunay triangle.</span>
+    <span class="hljs-comment">/// All triangles are directed counter-clockwise.</span>
+    <span class="hljs-keyword" >pub</span> triangles: <span class="hljs-built_in">Vec</span>&lt;<span class="hljs-keyword" >usize</span>&gt;,
+
+    <span class="hljs-comment">/// A vector of adjacent halfedge indices that allows traversing the triangulation graph.</span>
+    <span class="hljs-comment">///</span>
+    <span class="hljs-comment">/// `i`-th half-edge in the array corresponds to vertex `triangles[i]`</span>
+    <span class="hljs-comment">/// the half-edge is coming from. `halfedges[i]` is the index of a twin half-edge</span>
+    <span class="hljs-comment">/// in an adjacent triangle (or `EMPTY` for outer half-edges on the convex hull).</span>
+    <span class="hljs-keyword" >pub</span> halfedges: <span class="hljs-built_in">Vec</span>&lt;<span class="hljs-keyword" >usize</span>&gt;,
+
+    <span class="hljs-comment">/// A vector of indices that reference points on the convex hull of the triangulation,</span>
+    <span class="hljs-comment">/// counter-clockwise.</span>
+    <span class="hljs-keyword" >pub</span> hull: <span class="hljs-built_in">Vec</span>&lt;<span class="hljs-keyword" >usize</span>&gt;,
+}
+</pre>
+        </p>
+
+        <p>
+          The structure might seem unintuitive at first, but once you understand 3 simple things. It becomes much easier to wrap your head around it.
+        </p>
+
+        <p>
+          <b>#1. The edges.</b> Edges are the building blocks of a DCEL. They are stored in the <code>triangles</code> Vec. Each
+          value in the vector is the starting point of an edge. As such:
+          <ul>
+            <li><code>triangulation.triangles.len()</code> returns the number of edges in the triangulation</li>
+            <li><code>triangulation.triangles[0]</code> returns, for edge #0, the index of the point in the original vertex vector</li>
+            <li><code>points[triangulation.triangles[0]]</code> returns, for edge #0, the coordinates of the starting point (<code>points</code> being the original vector passed to the triangulate function)</li>
+          </ul>
+        </p>
+
+        <p>
+          <b>#2. The triangles.</b> Triangles are also stored in the <code>triangles</code>. Each triple of edges forms a triangle. As such:
+          <ul>
+            <li><code>triangulation.triangles.len() / 3</code> returns the number of triangles in the triangulation</li>
+            <li><code>triangulation.triangles[0..3]</code> defines the first triangle</li>
+            <li><code>index [0, 1]</code> defines the start and end points of the first edge</li>
+            <li><code>index [1, 2]</code> defines the start and end points of the second edge</li>
+            <li><code>index [2, 0]</code> defines the start and end points of the third edge</li>
+          </ul>
+        </p>
+
+        <p>
+          <b>#3 Moving from one triangle to one of its neighbor.</b> A triangle can have up to three neighbors, so iterating over the <code>triangles</code> in
+          a linear fashion is not really helpful. That's where the <code>halfedges</code> comes to save the day. For an edge "X", indexing into the <code>halfedges</code>
+          returns the edge of the opposite triangle (or <code>usize::Max</code> if the edge points outside of the triangulation). As such:
+
+          <ul>
+            <li><code>triangulation.halfedges[0]</code> returns the index of the neighbouring triangle edge</li>
+            <li><code>triangulation.triangles[triangulation.halfedges[0]]</code> returns the index of the point of the neighbouring edge</li>
+            <li><code>points[triangulation.triangles[triangulation.halfedges[0]]]</code> returns the coordinates of the starting point of the neighbouring edge</li>
+          </ul>
+        </p>
+
+        <p>
+          For more details, delaunator has a <a href="https://mapbox.github.io/delaunator/" target="_blank">more in depth guide</a> on how the data structure works.
+        </p>
+
+        <p>
+          Lets put this knowledge into practice, and do one of the most simple operation you can do on a navmesh...
         </p>
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hFindTriangle" class="article-h"><a href="#hFindTriangle">Finding in which cell a point is</a></h2>
+        <h2 id="hFindTriangle" class="article-h"><a href="#hFindTriangle">Mapping a point inside the navmesh</a></h2>
+
+        <p>
+          One of the most basic thing to query in a navmesh is in which triangle an object is located. Sure it is possible to brute force it by looping over every
+          triangle and check if the point is inside. However, thanks to how the navmesh is built, it is possible to query the information with much fewer instructions.
+        </p>
+
+        <p>
+          To debug this feature. On the navigation tab, check "Debug Triangle lookup". The <code>triangle_at</code> function code is also available 
+          <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs#L286"  target="_blank">HERE</a>.
+        </p>
+
+        <div class="image-holder">
+          <img src="assets/images/2.png" loading="lazy" alt="triangle lookup example"></img>
+        </div>
+
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hGenerateGraph" class="article-h"><a href="#hGenerateGraph">Generate a graph</a></h2>
+        <h2 id="hGenerateGraph" class="article-h"><a href="#hGenerateGraph">Generate a graph</a></h2>
+
+        <p>
+          The A* algorithm works on a graph, however a navmesh is not a graph. Building a pathfinding graph can be done using  many different techniques, and you may not even need a navmesh!
+          For this demo, I'm using the simplest method available: the navmesh triangles are the cells, and the cost to move between the cells is the distance between each triangle 
+          <a href="https://en.wikipedia.org/wiki/Incenter" target="_blank">incenter</a>. There is also a very good article by Red Blob games called
+          <a href="https://theory.stanford.edu/~amitp/GameProgramming/MapRepresentations.html">map representation</a> that goes deeper into the subject.
+        </p>
+
+        <p>
+          To debug the graph, go to the "pathfinding" tab and check the "show pathfinding graph" option.
+        </p>
+
+        <p>
+          Because working directly with the navmesh, with the multiple levels of indirection, is not very good for code readability or data locality,
+          We can store more than just the distance between the nodes. Each field will be explained later, but for now, here's the data type of a node:
+        </p>
+
+        <p>
+<pre class="hljs" style="display: block; overflow-x: auto; padding: 0.5em; background: rgb(43, 43, 43); color: rgb(186, 186, 186);">
+<span class="hljs-keyword" >pub</span> <span class="hljs-class"><span class="hljs-keyword" >struct</span> <span class="hljs-title">Triangle</span></span>(<span class="hljs-keyword" >u32</span>);
+
+<span class="hljs-class"><span class="hljs-keyword" >struct</span> <span class="hljs-title">NavNodeNeighbor</span></span> {
+    <span class="hljs-keyword" >pub</span> center: <span class="hljs-title">PositionF32</span>,
+    <span class="hljs-keyword" >pub</span> segment: [<span class="hljs-title">PositionF32</span>; <span class="hljs-number" style="color: rgb(104, 150, 186);">2</span>],
+    <span class="hljs-keyword" >pub</span> triangle: <span class="hljs-title">Triangle</span>,
+    <span class="hljs-keyword" >pub</span> distance: <span class="hljs-keyword" >f32</span>,
+}
+
+<span class="hljs-class"><span class="hljs-keyword" >struct</span> <span class="hljs-title">NavNode</span></span> {
+    <span class="hljs-keyword" >pub</span> triangle: <span class="hljs-title">Triangle</span>,
+    <span class="hljs-keyword" >pub</span> center: <span class="hljs-title">PositionF32</span>,
+    <span class="hljs-keyword" >pub</span> n0: <span class="hljs-title">NavNodeNeighbor</span>,
+    <span class="hljs-keyword" >pub</span> n1: <span class="hljs-title">NavNodeNeighbor</span>,
+    <span class="hljs-keyword" >pub</span> n2: <span class="hljs-title">NavNodeNeighbor</span>,
+    <span class="hljs-keyword" >pub</span> disconnected: <span class="hljs-keyword" >u32</span>
+}
+</pre>
+        </p>
+
+        <p>
+          The nodes are stored in a <code>Vec&lt;NavNode&gt;</code> that maps to the navmesh triangles. 
+        </p>
+
+        <p>
+          The code is <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs#L163"  target="_blank">HERE</a>.
+        </p>
+
+        <div class="image-holder">
+          <img src="assets/images/3.png" loading="lazy" alt="blocked cells"></img>
+        </div>
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hRemoveNodes" class="article-h"><a href="#hRemoveNodes">Removing blocked nodes from the graph</a></h2>
+        <h2 id="hRemoveNodes" class="article-h"><a href="#hRemoveNodes">Removing blocked nodes from the graph</a></h2>
+
+        <p>
+          Next step is removing the blocked nodes from the graph. Toggle blocked cell debugging in the navigation tab by checking "show blocked cells" 
+        </p>
+
+        <p>
+          To detect which cell is blocked, check if the center of a cell is in the bounding box saved in step #1. The algorithm brute force it by checking each bounding box for each node in the graph.
+          The scaling is a problem for future me.
+        </p>
+
+        <p>
+          Removing the nodes from the Vec is not a good idea because we lose the triangle->node mapping and because we may need to compute the path from inside a
+          blocked node. Instead we add a <code>disconnected</code> flag. For every blocked node, set this flag to true and next, lookup the neighbouring nodes and set the distance from that neighbouring node and the blocked node to infinity.
+        </p>
+
+        <p>
+          The code is <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs#L243" target="_blank">HERE</a>
+        </p>
+
+        
+        <div class="image-holder">
+          <img src="assets/images/4.png" loading="lazy" alt="blocked cells"></img>
+        </div>
+
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hAStarCompute" class="article-h"><a href="#hAStarCompute">Using A* to compute the optimal path between two cells</a></h2>
+        <h2 id="hAStarCompute" class="article-h"><a href="#hAStarCompute">Using A* to compute the optimal path between two cells</a></h2>
+
+        <p>
+          Rust has an implementation of the A* algorithm in the <code>pathfinding</code> crate. However, because the algorithm is simple enough to code, we have our own implementation.
+          Toggle pathfinding debugging in the pathfinding tab by checking "debug pathfinding".
+        </p>
+
+        <p>
+          Also, while coding the algorithm is simple, explaining the logic behind the code should be a topic for a separate article. Several such articles already exist online. The best one I found is
+          <a href="https://www.redblobgames.com/pathfinding/a-star/implementation.html">Implementation of A* by Red Blob Games</a>.
+        </p>
+
+        <p>
+          Because of the graph generated in the previous step, all the information needed to run the A* algorithm is already in the node. Each neighbor (n0, n1, n2) in the cell as the <code>distance</code>
+          to quickly add the new_cost to move to the node. And the <code>center</code> of the neighbor node can be used to compute the heuristic (<code>neighbor.center.distance(end_point)</code>).
+        </p>
+
+        <p>
+          The output of the algorithm is a Vec of segments (or "gates") the moving unit will have to go through. This will be needed to optimize the path in the following step.
+        </p>
+
+        <p>
+          Check this project implementation <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs#L372" target="_blank">HERE</a>
+        </p>
+
+        <div class="image-holder">
+          <img src="assets/images/6.png" loading="lazy" alt="pathfinding basic"></img>
+        </div>
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hOptimizePath" class="article-h"><a href="#hOptimizePath">Optimizing the path using the Simple Stupid Funnel Algorithm</a></h2>
+        <h2 id="hOptimizePath" class="article-h"><a href="#hOptimizePath">Optimizing the path using the Simple Stupid Funnel Algorithm</a></h2>
+
+        <p>
+          
+        </p>
+
+
+        <p>
+          Toggle funnel debugging in the pathfinding tab by checking "debug pathfinding funnel"
+        </p>
+        
+        <div class="image-holder">
+          <img src="assets/images/7.png" loading="lazy" alt="pathfinding funnel"></img>
+        </div>
+
+        <p>
+          Toggle the optimal pathfinding in the pathfinding tab by checking "debug pathfinding (smoothed)"
+        </p>
+
+         <div class="image-holder">
+          <img src="assets/images/8.png" loading="lazy" alt="pathfinding optimized"></img>
+        </div>
       </div>
 
       <hr class="article-separator">
 
       <div>
-        <h3 id="hLimitation" class="article-h"><a href="#hLimitation">Limitations & steps forward</a></h2>
+        <h2 id="hLimitation" class="article-h"><a href="#hLimitation">Limitations & steps forward</a></h2>
+
+        <h3>Broken tesselation</h3>
+        <div class="image-holder">
+          <img src="assets/images/err1.png" loading="lazy" alt="pathfinding basic"></img>
+        </div>
+
+
+        <h3>Suboptimal paths</h3>
+        <div class="image-holder">
+          <img src="assets/images/err2.png" loading="lazy" alt="pathfinding basic"></img>
+        </div>
+
+
+        <h3>Moving multiple units</h3>
+
+        <h3>Checking if a unit can fit within a gap</h3>
+
+        <h3>Doors and other "fun" features</h3>
+
+
       </div>
     </div>
   </main>

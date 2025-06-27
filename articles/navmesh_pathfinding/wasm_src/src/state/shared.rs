@@ -64,7 +64,6 @@ pub(super) fn primary_mouse_actions(game: &mut GameClient) {
             }
         },
         GameInputType::PlacePawn => {
-            dbg!("TEST");
             if position_inside_terrain(&data.terrain, position) {
                 let sprite = data.assets.atlas.pawn_idle.sprite();
                 world_data.add_pawn(center_sprite(position, sprite.texcoord.size()));

@@ -8,7 +8,7 @@ use crate::shared::{PositionF32, AABB, pos};
 use crate::store::StoreLoad;
 use super::GameWorldData;
 
-/// The identifier of a triangle in the navmesh. 
+/// The identifier of a triangle in the navmesh.
 /// The inner identifier is also the index of the triangle in the navigation graph
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, FromBytes, Immutable, IntoBytes)]
 pub struct Triangle(u32);
@@ -429,7 +429,7 @@ impl NavigationState {
                     index: cell.node_index,
                     parent_index: cell.came_from,
                     gate,
-                    cost_to_start: 0.0 
+                    cost_to_start: 0.0
                 });
 
                 build_final_path(cell.node_index, &mut processed, output);

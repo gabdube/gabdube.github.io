@@ -76,6 +76,7 @@ footer > p {
 .header-nav > div > a {
     text-decoration: none;
     color: rgb(224, 224, 224);
+    user-select: none;
 }
 
 #introduction {
@@ -107,6 +108,8 @@ footer > p {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+
+    background-position: center;
 }
 
 .gallery-item-hover {
@@ -132,13 +135,44 @@ footer > p {
     align-items: center;
 }
 
+code {
+    background-color: rgb(25, 25, 25);
+}
+
+/* Code */
+
+.hljs {
+    border: 1px solid rgb(30 30 30);
+}
+
+.hljs-keyword {
+    color: rgb(203, 120, 50);
+}
+
+.hljs-comment {
+    color: rgb(127, 127, 127);
+}
+
+.hljs-built_in, .hljs-title {
+    color: rgb(224, 196, 108);
+}
 
 /* Articles */
+
+.article h2 {
+    color: rgb(255, 255, 255);
+}
+
+.article-h {
+    margin: 30px 0px;
+    text-align: center;
+}
 
 body.article {
     display: grid;
     grid-template-rows: [header] 70px [main] max(300px, calc(100vh - 100px)) [footer] 30px;
     grid-template-columns: [article] 55% [canvas] 45%;
+    overflow: hidden;
 }
 
 body.article.focus {
@@ -185,7 +219,18 @@ body.article > #demo {
     color: inherit
 }
 
-@media (max-width: 999px) {
+.image-holder {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.image-holder > img {
+    max-width: 100vw;
+}
+
+@media (max-width: 1600px) {
     body.article {
         grid-template-columns: [article] 100% [canvas] 0px;
     }
@@ -194,16 +239,25 @@ body.article > #demo {
         width: 0px;
         height: 0px;
     }
+
+    body.article.focus {
+        grid-template-columns: [article] 0px [canvas] 100%;
+    }
+
+    body.article.focus > #demo {
+        width: 100%;
+        height: 100%;
+    }
 }
 
 @media (max-width: 500px) {
-    .gallery-item > div > a {
-        width: 300px;
+    .gallery-item {
+        max-width: 100vw;
         height: 300px;
     }
 
-    .gallery-item {
-        width: 300px;
+    .gallery-item > div > a {
+        max-width: 100vw;
         height: 300px;
     }
 
@@ -211,10 +265,4 @@ body.article > #demo {
         margin: 20px 20px;
         line-height: 30px;
     }
-}
-
-/* Other */
-
-#demoToggle, #demoReset {
-    cursor: pointer;
 }

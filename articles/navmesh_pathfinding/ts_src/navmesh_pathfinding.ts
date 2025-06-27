@@ -47,11 +47,6 @@ class Engine {
 // Init
 //
 
-function toggleDemo() {
-    const classes = document.body.classList;
-    classes.contains("focus") ? classes.remove("focus") : classes.add("focus");
-}
-
 function init_handlers(engine: Engine) {
     const canvas = engine.renderer.canvas.element;
     const input_state = engine.input;
@@ -147,8 +142,6 @@ function init_handlers(engine: Engine) {
     window.addEventListener("keydown", (event) => {
         if (event.code === "KeyR") {
             engine.refresh_client = true;
-        } else if (event.code == "KeyD") {
-            toggleDemo();   
         }
 
         input_state.keys.set(event.code, true);
@@ -160,6 +153,11 @@ function init_handlers(engine: Engine) {
         input_state.keys.set(event.code, false);
         input_state.updates |= UPDATE_KEYS;
     });
+
+    document.getElementById("resetDemo")?.addEventListener("click", (event) => {
+        engine.refresh_client = true;
+    });
+
 }
 
 function start_client(engine: Engine): boolean {
@@ -364,7 +362,13 @@ function run(engine: Engine) {
     }
 }
 
-async function init_app() {
+let initialized = false;
+
+async function init_app(): Promise<boolean> {
+    if (initialized) {
+        return false;
+    }
+
     const demo = document.getElementById("demo") as HTMLCanvasElement;
     if (demo.clientWidth == 0 || demo.clientHeight == 0) {
         return true;
@@ -376,10 +380,13 @@ async function init_app() {
         return false;
     }
 
+    initialized = true;
+
     boundedRun = run.bind(null, engine);
     boundedRun();
 
     window.removeEventListener("resize", init_app);
+
     return false;
 }
 
@@ -390,4 +397,22 @@ async function init_on_resize() {
     }
 }
 
+function toggleDemo() {
+    const classes = document.body.classList;
+    classes.contains("focus") ? classes.remove("focus") : classes.add("focus");
+    init_app();
+}
+
+function init_demo_toggle_handlers() {
+    document.getElementById("toggleDemo")?.addEventListener("click", (event) => {
+        toggleDemo();
+    });
+    window.addEventListener("keydown", (event) => {
+        if (event.code == "KeyD") {
+            toggleDemo();
+        }
+    });
+}
+
 init_on_resize();
+init_demo_toggle_handlers();

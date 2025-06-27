@@ -19,6 +19,7 @@ pub fn init(game: &mut GameClient) {
 
     wd.add_pawn(pos(151.0, 723.0));
     wd.add_pawn(pos(446.0, 128.0));
+    wd.add_pawn(pos(100.0, 290.0));
 
     wd.compute_navigation();
     

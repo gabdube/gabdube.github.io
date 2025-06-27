@@ -74,6 +74,7 @@ impl Gui {
                 events: &mut self.events,
                 debug_flags: &mut self.debug_flags,
                 state_input: &mut self.game_input,
+                gui_width: width
             };
 
             components::right_panel(ui, width-left_panel_width, |ui| {
