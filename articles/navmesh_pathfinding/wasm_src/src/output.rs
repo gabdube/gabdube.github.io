@@ -57,6 +57,11 @@ impl GameOutput {
             flags.clear_update_view_offset();
         }
 
+        if flags.update_zoom() {
+            GameOutput::update_view_size(client);
+            flags.clear_update_zoom();
+        }
+
         if flags.update_terrain() {
             GameOutput::update_terrain(client);
             flags.clear_update_terrain();
@@ -370,6 +375,17 @@ impl GameOutput {
         client.output.messages.push(OutputMessage { 
             ty: OutputMessageType::UpdateViewOffset,
             params: OutputMessageParams { update_view_offset: client.world_data.data.common.view_offset },
+        });
+    }
+
+    fn update_view_size(client: &mut GameClient) {
+        let common = &client.world_data.data.common;
+        let width = common.view_size.width * (1.0 / common.zoom);
+        let height = common.view_size.height * (1.0 / common.zoom);
+
+        client.output.messages.push(OutputMessage { 
+            ty: OutputMessageType::UpdateViewSize,
+            params: OutputMessageParams { update_view_size: crate::shared::size(width, height) },
         });
     }
 

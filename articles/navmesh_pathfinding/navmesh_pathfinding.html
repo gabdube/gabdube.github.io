@@ -22,11 +22,14 @@
   <main>
     <div id="content">
       <div>
-        <p>Pathfinding is complex. Most game engine already provide a generic solution that will handle all the messy parts. However, if you are building your own, this is something you will have to code (mostly) from scratch.</p>
+        <p>
+          Pathfinding is complex. When using a off-the-shelf game engine (like Unity), this is not a problem people have to worry about.
+          However, with a custom game engine, developing a pathfinding system is essential, and it needs to be coded (mostly) from scratch.
+        </p>
         <p>Good news, there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
         <p>Bad news, theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
         <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh, computing the optimal path using A-star, to generating the final path. Using Rust of course.</p>
-        <p>If your screen width is smaller than 1600 pixels, the interactive demo will be hidden by default. It is MUCH better to run it on a desktop. </p>
+        <p>If your screen width is smaller than 1300 pixels, the interactive demo will be hidden by default. It is MUCH better to run it on a desktop. </p>
         <p>
           The code for this demo is available on github <a href="https://github.com/gabdube/gabdube.github.io/tree/master/articles/navmesh_pathfinding" target="_blank">HERE</a> and all of the pathfinding logic
           is in <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs" target="_blank">THIS</a> file
@@ -39,7 +42,7 @@
           <li>Primary mouse click / single tap to select sprites, interact with the gui</li>
           <li>Secondary mouse click / double tap to move selected pawn</li>
           <li>Single finger drag to simulate a mouse move</li>
-          <li>Middle mouse / double finger drag to pan the world</li>
+          <li>Middle mouse, Arrow Keys, or holding touch near the screen borders to pan the world</li>
           <li>[D] or [Toggle Demo] header label to toggle the demo visibility</li>
           <li>[R] or [Reset Demo] header label to reset the demo</li>
         </ul>
@@ -60,20 +63,16 @@
 
       <div>
         <h2 id="hTriangulate" class="article-h"><a href="#hTriangulate">Using Delaunay triangulation to generate the base navmesh</a></h2>
-          
-        <p>
-          On its own, a navmesh is really just a 2D mesh. In the "Generation" demo you can toggle the navmesh using the "Show navmesh" check box.
-        </p>
         
         <p>
-          In most game engines, building a navmesh is not done manually. Usually there is a "baking" feature that takes 2D or 3D objects as inputs, and then generates the navmesh.
-          The overall process in this article should be almost identical to this.
+          The base of a navmesh is really just a mesh of interconnected polygons, in this case triangles.
+          Navmesh generation is usually done through a "baking" step that takes 2D or 3D objects as inputs.
         </p>
 
         <p>
           The best way to generate a navmesh is called <a href="https://en.wikipedia.org/wiki/Delaunay_triangulation" target="_blank">Delaunay triangulation</a>. 
-          With a dynamic demo, this must be done in real-time; however, Delaunay triangulation is cheap to compute and can easily process thousands of vertices in only a few ms, even on less powerful hardware.
-          Moreover, you don't need to implement Delaunay triangulation from scratch; there are many libraries, in every language, ready to be used. Most of them are small, self contained, and REALLY optimized.
+          Delaunay triangulation is cheap to compute and can easily process thousands of vertices in only a few ms, even on less powerful hardware.
+          Moreover, you don't need to implement it from scratch; there are many libraries, in every language, ready to be used. Most of them are small, self contained, and REALLY optimized.
         </p>
 
         <p>
@@ -97,8 +96,12 @@
         </p>
 
         <p>
-          When working with sprites, first add all the corners of the world and then, for each sprite with collisions, add the bounding box coordinates.
+          When working with sprites, first add the limits of the world and then, for each sprite with collisions, add the bounding box coordinates.
           We're also saving the bounding boxes of each one of those sprites, we will need them to remove the unreachable nodes in the following steps.
+        </p>
+
+        <p>
+          In the "Generation" demo you can toggle the navmesh using the "Show navmesh" check box.
         </p>
 
         <p>
@@ -200,7 +203,7 @@
         <p>
           One of the attribute of our navmesh is that all the vertex of the triangles are generated in a counter-clockwise order. This allows us to check if a point is in a triangle, and if it is not, it also give us in which direction we should continue the search. All we have to do is compute 
           on which side of a line the point we are checking is. <a href="https://docs.rs/robust/latest/robust/fn.orient2d.html">robust</a> gives us the <code>orient2d</code>
-          to do that.
+          function to do that.
         </p>
 
         <p>Here's a, huh, "visual aid" to explain how that works</p>
@@ -219,7 +222,8 @@
         </p>
 
         <p>
-          So starting from any triangle in the navmesh (triangle #0 is as good as any), run the logic from above and we will get our end triangle.
+          So starting from any triangle in the navmesh (triangle #0 is as good as any, provided your navmesh isn't too large), run the logic from above, and move from neighbor to
+          neighbor until the 4th condition returns true.
         </p>
 
         <p>
@@ -296,7 +300,7 @@
         <h2 id="hRemoveNodes" class="article-h"><a href="#hRemoveNodes">Removing blocked nodes from the graph</a></h2>
 
         <p>
-          Next we need to remove the blocked nodes from the graph.  To detect which cell is blocked, check if the center of a cell is in the bounding box saved in step #1. 
+          Next we need to remove the blocked nodes from the graph. To detect which node is blocked, check if the center of a node is in the bounding box saved in step #1. 
           The algorithm brute force it by checking each bounding box for each node in the graph. The scaling is a problem for future me.
         </p>
 
@@ -381,7 +385,7 @@
         </div>
 
         <p>
-          The algorithm takes the start point and the list of gates generated by the last step. The end point is also added as a "gate" before running the algorithm.
+          The algorithm takes the start point and the list of gates generated by the last step. The end point is also added as a "gate" before running it.
           It outputs a Vec of points the character will have to go through.
         </p>
 

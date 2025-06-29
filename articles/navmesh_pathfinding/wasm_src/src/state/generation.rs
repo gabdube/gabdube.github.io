@@ -22,7 +22,13 @@ pub fn init(game: &mut GameClient) {
     wd.add_pawn(pos(100.0, 290.0));
 
     wd.compute_navigation();
-    
+
+    if wd.data.common.view_size.width < 800.0 {
+        wd.data.common.zoom = 0.75;
+        wd.data.gui.set_zoom(wd.data.common.zoom);
+        wd.data.common.flags.set_update_zoom();
+    }
+
     game.state.value = GameStateValue::Generation;
     wd.data.gui.set_state(game.state.value, GameInputType::Select);
     // wd.data.common.debug_flags.0 = crate::data::base::DebugFlags::SHOW_NAVMESH | crate::data::base::DebugFlags::SHOW_PATH_FUNNEL;
@@ -38,7 +44,7 @@ pub fn update(game: &mut GameClient) {
     set_insert_sprite(game);
 
     let data = &mut game.world_data.data;
-    if data.gui.position_outside_gui(data.common.mouse_position) {
+    if data.gui.position_outside_gui(data.common.mouse_position_gui) {
         if data.common.primary_mouse_just_pressed() {
             primary_mouse_actions(game);
         }

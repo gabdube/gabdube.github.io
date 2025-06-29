@@ -8,7 +8,7 @@ pub fn update(game: &mut GameClient) {
     let world = &mut game.world_data.world;
     let common = &data.common;
 
-    if data.gui.position_outside_gui(common.mouse_position) {
+    if data.gui.position_outside_gui(common.mouse_position_gui) {
         if common.primary_mouse_just_pressed() {
             let position = common.mouse_position - common.view_offset;
             world.clear_selected_sprites();

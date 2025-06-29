@@ -112,17 +112,15 @@ fn moving(entity: Entity, state: &mut PawnBehaviourState, params: MoveToPointPar
 
     world.set_pawn_position(entity, new_position);
 
-    if new_position != end_position {
-        world.set_pawn_flipped(entity, dx);
-    }
-
-    if new_position == end_position {
+    if new_position.roughly_equal(end_position) {
         step_index += 1;
         if step_index == steps.len() {
             state.step = DESTINATION_REACHED;
         } else {
             *current_step = step_index as u32;
         }
+    } else {
+        world.set_pawn_flipped(entity, dx);
     }
 }
 
@@ -143,11 +141,11 @@ fn move_to_with_speed(current: PositionF32, target: PositionF32, frame_delta: f3
     let move_y = speed * f32::sin(angle);
     let mut updated_position = pos(current.x + move_x, current.y + move_y);
 
-    if f32::abs(updated_position.x - target.x) < 1.0 {
+    if f32::abs(updated_position.x - target.x) < 5.0 {
         updated_position.x = target.x;
     }
 
-    if f32::abs(updated_position.y - target.y) < 1.0 {
+    if f32::abs(updated_position.y - target.y) < 5.0 {
         updated_position.y = target.y;
     }
 

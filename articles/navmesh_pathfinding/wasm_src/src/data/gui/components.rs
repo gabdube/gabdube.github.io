@@ -14,6 +14,7 @@ pub(super) struct PanelParams<'a> {
     pub events: &'a mut Vec<GuiEvent>,
     pub debug_flags: &'a mut DebugFlags,
     pub state_input: &'a mut GameInputType,
+    pub zoom_level: &'a mut f32,
     pub gui_width: f32,
 }
 
@@ -111,6 +112,20 @@ pub fn generation_panel(ui: &mut egui::Ui, params: PanelParams) {
       
         ui.separator();
         bitflag_checkbox(ui, params.events, "Show navmesh", params.debug_flags, DebugFlags::SHOW_NAVMESH, 0, DebugFlags::SHOW_CELL_CENTERS);
+        
+        ui.horizontal(|ui| {
+            ui.label("Zoom level:");
+
+            let mut zoom_update = false;
+            zoom_update |= ui.selectable_value(params.zoom_level, 1.0, "1x").clicked();
+            zoom_update |= ui.selectable_value(params.zoom_level, 0.75, "0.75x").clicked();
+            zoom_update |= ui.selectable_value(params.zoom_level, 0.5, "0.5x").clicked();
+            zoom_update |= ui.selectable_value(params.zoom_level, 0.25, "0.25x").clicked();
+            if zoom_update {
+                params.events.push(GuiEvent::SetZoom(*params.zoom_level));
+            }
+        });
+
     });
 }
 

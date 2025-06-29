@@ -130,6 +130,8 @@ impl GameClient {
     pub fn resize(&mut self, width: u32, height: u32) {
         let data = &mut self.world_data.data;
         data.common.view_size = shared::size(width as f32, height as f32);
+        data.common.zoom = 1.0;
+        data.common.flags.set_update_zoom();
         data.gui.resize(width, height);
     }
 
@@ -142,6 +144,7 @@ impl GameClient {
     }
 
     pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
+        self.world_data.data.common.update_keys(key_name, pressed);
         self.world_data.data.gui.update_keys(key_name, pressed);
     }
 

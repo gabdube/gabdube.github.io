@@ -1,4 +1,4 @@
-use crate::shared::PositionF32;
+use crate::shared::{PositionF32, SizeF32};
 
 /// Engine must read data in the client data buffer and copy it in the engine sprite instance buffer
 #[repr(C)]
@@ -83,6 +83,7 @@ pub union OutputMessageParams {
     pub gui_texture_update: GuiTextureUpdateParams,
     pub gui_mesh_update: GuiMeshUpdateParams,
     pub update_view_offset: PositionF32,
+    pub update_view_size: SizeF32,
     pub draw_insert_sprite: DrawInsertSpriteParams,
 }
 
@@ -99,6 +100,7 @@ pub enum OutputMessageType {
     GuiMeshUpdate,
     ResetGui,
     UpdateViewOffset,
+    UpdateViewSize,
     DrawInsertSprite,
 }
 

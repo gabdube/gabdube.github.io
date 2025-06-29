@@ -685,6 +685,21 @@ class Renderer {
             ctx.uniform2fv(uniform, offset);
         }
     }
+    update_view_size(message) {
+        const ctx = this.ctx;
+        const size = new Float32Array(message); // message is the [x, y] view offset
+        const size_uniforms = [
+            [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
+            [this.shaders.highlight_sprites, this.shaders.highlight_sprites_uniforms[1]],
+            [this.shaders.insert_sprites, this.shaders.insert_sprites_uniforms[0]],
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+            [this.shaders.debug, this.shaders.debug_uniforms[1]],
+        ];
+        for (let [shader, uniform] of size_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, size);
+        }
+    }
     prepare_updates() {
         this.ctx.bindVertexArray(null);
         this.sprites.draw_count = 0;
@@ -743,6 +758,10 @@ class Renderer {
                 }
                 case "UpdateViewOffset": {
                     this.update_view_offset(message.update_view_offset());
+                    break;
+                }
+                case "UpdateViewSize": {
+                    this.update_view_size(message.update_view_size());
                     break;
                 }
                 default: {
@@ -1386,6 +1405,7 @@ class GameInput {
         this.right_mouse_button = null;
         this.center_mouse_button = null;
         this.tap_timeout = 0;
+        this.touch_scrolling = false;
         this.touchmove = false;
         this.keys = new Map();
     }
@@ -1440,14 +1460,52 @@ function init_handlers(engine) {
         }
         event.preventDefault();
     }
+    function startScroll(clientX, clientY) {
+        clientX = clientX - canvas.offsetLeft;
+        clientY = clientY - canvas.offsetTop;
+        console.log(clientX, clientY);
+        // Hardcoded gui height in the wasm client
+        const gui_height = 200;
+        if (canvas.height - clientY < gui_height) {
+            return false;
+        }
+        const deadzone = 60;
+        let scroll = false;
+        if (clientX < deadzone) {
+            input_state.keys.set("ArrowLeft", true);
+            scroll = true;
+        }
+        else if (canvas.width - clientX < deadzone) {
+            input_state.keys.set("ArrowRight", true);
+            scroll = true;
+        }
+        if (clientY < deadzone) {
+            input_state.keys.set("ArrowUp", true);
+            scroll = true;
+        }
+        else if (canvas.height - clientY < gui_height + deadzone) {
+            input_state.keys.set("ArrowDown", true);
+            scroll = true;
+        }
+        if (scroll) {
+            input_state.updates |= UPDATE_KEYS;
+        }
+        input_state.touch_scrolling = scroll;
+        return scroll;
+    }
     canvas.addEventListener("mousemove", on_mouse_move);
     canvas.addEventListener("mousedown", on_mouse_down);
     canvas.addEventListener("mouseup", on_mouse_up);
     canvas.addEventListener("touchstart", (event) => {
         const touch = event.touches;
         if (touch.length == 1) {
+            let { clientX, clientY } = touch[0];
+            // Border touches for scrolling
+            if (startScroll(clientX, clientY)) {
+                return;
+            }
             if (input_state.tap_timeout !== 0) {
-                on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
                 const event = new MouseEvent("mousedown", { button: 2 });
                 on_mouse_down(event);
                 setTimeout(() => on_mouse_up(event), 50);
@@ -1457,7 +1515,7 @@ function init_handlers(engine) {
             }
             // Single tap
             input_state.tap_timeout = setTimeout(() => {
-                on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
                 const event = new MouseEvent("mousedown", { button: 0 });
                 on_mouse_down(event);
                 setTimeout(() => on_mouse_up(event), 50);
@@ -1467,6 +1525,15 @@ function init_handlers(engine) {
         }
     });
     canvas.addEventListener("touchend", (event) => {
+        // Border touches for scrolling
+        if (input_state.touch_scrolling && event.touches.length == 0) {
+            input_state.keys.set("ArrowLeft", false);
+            input_state.keys.set("ArrowRight", false);
+            input_state.keys.set("ArrowUp", false);
+            input_state.keys.set("ArrowDown", false);
+            input_state.updates |= UPDATE_KEYS;
+            return;
+        }
         if (input_state.touchmove) {
             // MAAAANN I hate mobile devices
             const event1 = new MouseEvent("mousedown", { button: 0 });
@@ -1486,13 +1553,6 @@ function init_handlers(engine) {
         if (touch.length == 1) {
             on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
             input_state.touchmove = true;
-        }
-        else if (touch.length == 2) {
-            on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
-            input_state.center_mouse_button = true;
-        }
-        if (touch.length != 2) {
-            input_state.center_mouse_button = false;
         }
     });
     canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });

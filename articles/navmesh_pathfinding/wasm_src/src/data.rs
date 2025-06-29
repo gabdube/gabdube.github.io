@@ -23,13 +23,13 @@ use navigation::NavigationState;
 pub mod debug;
 use debug::DebugState;
 
-use crate::shared::{PositionF32, SizeF32, pos};
+use std::collections::HashMap;
+use crate::shared::{PositionF32, SizeF32, pos, size};
 use crate::store::StoreLoad;
 
 const ANIMATION_INTERVAL: f64 = 1000.0 / 16.0; // 16fps
 
 
-#[derive(Default, Copy, Clone)]
 pub struct CommonParams {
     pub time: f64,
     pub last_animation_tick: f64,
@@ -40,9 +40,13 @@ pub struct CommonParams {
 
     pub mouse_position_old: PositionF32,
     pub mouse_position: PositionF32,
+    pub mouse_position_gui: PositionF32,
     pub view_offset: PositionF32,
     pub view_size: SizeF32,
+    pub zoom: f32,
+
     pub mouse_buttons: [base::ButtonState; 3],
+    pub keys: HashMap<String, base::ButtonState>,
 
     pub total_sprites: u32,
 }
@@ -64,8 +68,49 @@ impl CommonParams {
             None
         }
     }
-    
+
+    pub fn key_pressed(&self, key: &str) -> bool {
+        self.keys.get(key).map(|k| k.pressed() ).unwrap_or(false)
+    }
+
+    pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
+        const KEYS_FILTER: &[&str] = &["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp"];
+        if KEYS_FILTER.iter().any(|&k| k == key_name) {
+            let key_string = key_name.to_string();
+            self.keys.insert(key_string, match pressed {
+                true => base::ButtonState::JustPressed,
+                false => base::ButtonState::JustReleased,
+            });
+        }
+    }
 }
+
+impl Default for CommonParams {
+    fn default() -> Self {
+        CommonParams {
+            time: 0.0,
+            last_animation_tick: 0.0,
+            time_delta: 0.0,
+
+            flags: base::GameFlags(0),
+            debug_flags: base::DebugFlags(0),
+
+            mouse_position_old: pos(0.0, 0.0),
+            mouse_position: pos(0.0, 0.0),
+            mouse_position_gui: pos(0.0, 0.0),
+
+            view_offset: pos(0.0, 0.0),
+            view_size: size(0.0, 0.0),
+            zoom: 1.0,
+
+            mouse_buttons: [base::ButtonState::default(); 3],
+            keys: HashMap::default(),
+
+            total_sprites: 0,
+        }
+    }
+}
+
 
 #[derive(Default)]
 pub struct GameData {
@@ -178,7 +223,9 @@ impl GameWorldData {
 
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {
         let data = &mut self.data;
-        data.common.mouse_position = pos(x, y);
+        let zoom = 1.0 / data.common.zoom;
+        data.common.mouse_position_gui = pos(x, y);
+        data.common.mouse_position = pos(x*zoom, y*zoom);
         data.gui.update_mouse_position(x, y);
     }
 
@@ -192,7 +239,7 @@ impl GameWorldData {
             };
         }
 
-        data.gui.update_mouse_buttons(data.common.mouse_position, button, pressed);
+        data.gui.update_mouse_buttons(data.common.mouse_position_gui, button, pressed);
     }
 
     pub fn delete_sprite_at_position(&mut self, position: PositionF32) {
@@ -263,6 +310,7 @@ impl StoreLoad for CommonParams {
         writer.write(&self.mouse_position);
         writer.write(&self.view_offset);
         writer.write(&self.view_size);
+        writer.write(&self.zoom);
         
         writer.write(&self.total_sprites);
         
@@ -277,6 +325,7 @@ impl StoreLoad for CommonParams {
         params.mouse_position = reader.try_read()?;
         params.view_offset = reader.try_read()?;
         params.view_size = reader.try_read()?;
+        params.zoom = reader.try_read()?;
 
         params.total_sprites = reader.try_read()?;
        

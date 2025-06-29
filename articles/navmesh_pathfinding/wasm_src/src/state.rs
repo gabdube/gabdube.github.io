@@ -56,6 +56,10 @@ pub fn propagate_gui_events(client: &mut GameClient) {
             GuiEvent::SetDebugFlags(new_flags) => {
                 world_data.data.common.debug_flags = new_flags;
             },
+            GuiEvent::SetZoom(zoom) => {
+                world_data.data.common.zoom = zoom;
+                world_data.data.common.flags.set_update_zoom();
+            }
             GuiEvent::ResetWorld => {
                 world_data.clear_sprites();
                 world_data.compute_navigation();
@@ -65,25 +69,41 @@ pub fn propagate_gui_events(client: &mut GameClient) {
 }
 
 pub fn common_inputs(game: &mut GameClient) {
-    let globals = game.world_data.data.common;
+    let common = &game.world_data.data.common;
 
-    if game.world_data.data.gui.position_outside_gui(globals.mouse_position) {
-        if globals.middle_mouse_just_pressed() {
+    if game.world_data.data.gui.position_outside_gui(common.mouse_position_gui) {
+        if common.middle_mouse_just_pressed() {
             game.state.scroll_view = true;
-        } else if globals.middle_mouse_released() {
+        } else if common.middle_mouse_released() {
             game.state.scroll_view = false;
         } 
     }
     
-    if globals.secondary_mouse_just_pressed() {
+    if common.secondary_mouse_just_pressed() {
         shared::secondary_mouse_actions(game);
     }
 
+    let common = &mut game.world_data.data.common;
+    if common.key_pressed("ArrowLeft") {
+        common.view_offset.x += 5.0;
+        common.flags.set_update_view_offset();
+    } else if common.key_pressed("ArrowRight") {
+        common.view_offset.x -= 5.0;
+        common.flags.set_update_view_offset();
+    }
+    
+    if common.key_pressed("ArrowUp") {
+        common.view_offset.y += 5.0;
+        common.flags.set_update_view_offset();
+    } else if common.key_pressed("ArrowDown") {
+        common.view_offset.y -= 5.0;
+        common.flags.set_update_view_offset();
+    }
+   
     if game.state.scroll_view {
-        if let Some(delta) = globals.mouse_delta() {
-            let globals = &mut game.world_data.data.common;
-            globals.view_offset -= delta;
-            globals.flags.set_update_view_offset();
+        if let Some(delta) = common.mouse_delta() {
+            common.view_offset -= delta;
+            common.flags.set_update_view_offset();
         }
     }
 }

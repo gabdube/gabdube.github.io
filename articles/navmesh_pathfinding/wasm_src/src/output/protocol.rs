@@ -115,6 +115,7 @@ pub fn compile() -> String {
             ("GuiMeshUpdate", OutputMessageType::GuiMeshUpdate),
             ("ResetGui", OutputMessageType::ResetGui),
             ("UpdateViewOffset", OutputMessageType::UpdateViewOffset),
+            ("UpdateViewSize", OutputMessageType::UpdateViewSize),
             ("DrawInsertSprite", OutputMessageType::DrawInsertSprite),
         ]
     );
@@ -237,6 +238,7 @@ pub fn compile() -> String {
             ("gui_texture_update", "return new GuiTextureUpdateParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("gui_mesh_update", "return new GuiMeshUpdateParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("update_view_offset", "return [this.view.getFloat32(4, true), this.view.getFloat32(8, true)];"),
+            ("update_view_size", "return [this.view.getFloat32(4, true), this.view.getFloat32(8, true)];"),
         ]
     );
 

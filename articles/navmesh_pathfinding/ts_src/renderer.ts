@@ -550,7 +550,7 @@ export class Renderer {
         mesh.offset = index_offset;
     }
 
-    private update_view_offset(message: any) {
+    private update_view_offset(message: [number, number]) {
         const ctx = this.ctx;
         const offset = new Float32Array(message); // message is the [x, y] view offset
         const offset_uniforms: [WebGLProgram, WebGLUniformLocation][] = [
@@ -563,6 +563,23 @@ export class Renderer {
         for (let [shader, uniform] of offset_uniforms) {
             ctx.useProgram(shader);
             ctx.uniform2fv(uniform, offset);
+        }
+    }
+
+    private update_view_size(message: [number, number]) {
+        const ctx = this.ctx;
+        const size = new Float32Array(message); // message is the [x, y] view offset
+        const size_uniforms: [WebGLProgram, WebGLUniformLocation][] = [
+            [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
+            [this.shaders.highlight_sprites, this.shaders.highlight_sprites_uniforms[1]],
+            [this.shaders.insert_sprites, this.shaders.insert_sprites_uniforms[0]],
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+            [this.shaders.debug, this.shaders.debug_uniforms[1]],
+        ];
+
+        for (let [shader, uniform] of size_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, size);
         }
     }
 
@@ -626,6 +643,10 @@ export class Renderer {
                 }
                 case "UpdateViewOffset": {
                     this.update_view_offset(message.update_view_offset());
+                    break;
+                }
+                case "UpdateViewSize": {
+                    this.update_view_size(message.update_view_size());
                     break;
                 }
                 default: {

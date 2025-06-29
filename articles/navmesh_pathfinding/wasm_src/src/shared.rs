@@ -19,6 +19,10 @@ impl PositionF32 {
         let y2 = other.y - self.y;
         f32::sqrt(x2*x2 + y2*y2)
     }
+
+    pub fn roughly_equal(&self, other: PositionF32) -> bool {
+        (self.x - other.x).abs() < 2.0 && (self.y - other.y).abs() < 2.0
+    }
 }
 
 

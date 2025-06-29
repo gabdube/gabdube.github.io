@@ -12,6 +12,7 @@ pub enum GuiEvent {
     GameStateValueChanged(GameStateValue),
     SetDebugFlags(DebugFlags),
     SetInputType(GameInputType),
+    SetZoom(f32),
     ResetWorld,
 }
 
@@ -25,6 +26,7 @@ pub struct Gui {
     pixel_per_point: f32,
     max_texture_size: u32,
     view: [f32; 4],
+    zoom: f32,
     game_state: GameStateValue,
     game_input: GameInputType,
     debug_flags: DebugFlags,
@@ -74,6 +76,7 @@ impl Gui {
                 events: &mut self.events,
                 debug_flags: &mut self.debug_flags,
                 state_input: &mut self.game_input,
+                zoom_level: &mut self.zoom,
                 gui_width: width
             };
 
@@ -104,6 +107,10 @@ impl Gui {
         self.game_state = state;
         self.game_input = input;
         self.force_repaint = true;
+    }
+
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom;
     }
 
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
@@ -243,6 +250,7 @@ impl Default for Gui {
             pixel_per_point: 1.0,
             max_texture_size: 2048,
             view: [0.0; 4],
+            zoom: 1.0,
             game_state: GameStateValue::Uninitialized,
             game_input: GameInputType::Select,
             debug_flags: DebugFlags::default(),

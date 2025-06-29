@@ -7,9 +7,9 @@ pub fn update(game: &mut GameClient) {
 
     let data = &mut game.world_data.data;
     let world = &mut game.world_data.world;
-    let common = data.common;
+    let common = &data.common;
 
-    if data.gui.position_outside_gui(common.mouse_position) {
+    if data.gui.position_outside_gui(common.mouse_position_gui) {
         if common.primary_mouse_just_pressed() {
             let position = common.mouse_position - common.view_offset;
             world.clear_selected_sprites();
@@ -34,7 +34,7 @@ fn debug_pathfinding(game: &mut GameClient) {
     let data = &mut game.world_data.data;
     let nav = &data.navigation;
     let debug = &mut data.debug;
-    let common = data.common;
+    let common = &data.common;
 
     if let Some(start) = selected_pawn_position(&mut game.world_data.world) {
         let end = common.mouse_position - common.view_offset;

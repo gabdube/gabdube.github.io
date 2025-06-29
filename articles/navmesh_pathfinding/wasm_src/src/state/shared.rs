@@ -32,9 +32,8 @@ pub(super) fn set_insert_sprite_value(game: &mut GameClient, sprite: StaticSprit
     let data = &game.world_data.data;
     let world = &mut game.world_data.world;
 
-    let position = data.common.mouse_position;
-    if data.gui.position_outside_gui(position) {
-        world.set_insert_sprite(center_sprite(position, sprite.texcoord.size()), sprite);
+    if data.gui.position_outside_gui(data.common.mouse_position_gui) {
+        world.set_insert_sprite(center_sprite(data.common.mouse_position, sprite.texcoord.size()), sprite);
     } else {
         world.clear_insert_sprite();
     }
@@ -85,9 +84,9 @@ pub(super) fn secondary_mouse_actions(game: &mut GameClient) {
     
     let data = &mut game.world_data.data;
     let world = &mut game.world_data.world;
-    let common = data.common;
+    let common = &data.common;
 
-    if data.gui.position_outside_gui(common.mouse_position) {
+    if data.gui.position_outside_gui(common.mouse_position_gui) {
         let selected = world.selected_sprites().first().copied();
         if let Some(selected) = selected {
             if world.is_pawn(selected) {

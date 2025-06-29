@@ -21,11 +21,13 @@ impl GameFlags {
     pub const UPDATE_TERRAIN: u32 = 0b0010;
     pub const UPDATE_GUI: u32 = 0b0100;
     pub const UPDATE_VIEW_OFFSET: u32 = 0b1000;
+    pub const UPDATE_ZOOM: u32 = 0b10000;
 
     flags!(update_animations, set_update_animations, clear_update_animations, Self::UPDATE_ANIMATIONS);
     flags!(update_terrain, set_update_terrain, clear_update_terrain, Self::UPDATE_TERRAIN);
     flags!(update_gui, set_update_gui, clear_update_gui, Self::UPDATE_GUI);
     flags!(update_view_offset, set_update_view_offset, clear_update_view_offset, Self::UPDATE_VIEW_OFFSET);
+    flags!(update_zoom, set_update_zoom, clear_update_zoom, Self::UPDATE_ZOOM);
 }
 
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
@@ -178,4 +180,5 @@ impl ButtonState {
 
     pub fn released(self) -> bool { self == Self::JustReleased || self == Self::Released }
     pub fn just_pressed(self) -> bool { self == Self::JustPressed }
+    pub fn pressed(self) -> bool { self == Self::JustPressed || self == Self::Pressed }
 }

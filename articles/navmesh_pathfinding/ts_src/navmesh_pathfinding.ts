@@ -24,6 +24,7 @@ class GameInput {
     center_mouse_button: boolean|null = null;
 
     tap_timeout: number = 0;
+    touch_scrolling: boolean = false;
     touchmove: boolean = false;
 
     keys: Map<string, boolean> = new Map();
@@ -77,6 +78,45 @@ function init_handlers(engine: Engine) {
         event.preventDefault();
     }
 
+    function startScroll(clientX: number, clientY: number): boolean {
+        clientX = clientX - canvas.offsetLeft;
+        clientY = clientY - canvas.offsetTop;
+
+        console.log(clientX, clientY);
+        
+        // Hardcoded gui height in the wasm client
+        const gui_height = 200;
+        if (canvas.height - clientY < gui_height) {
+            return false;
+        }
+
+        const deadzone = 60;
+        let scroll = false;
+        if (clientX < deadzone) {
+            input_state.keys.set("ArrowLeft", true);
+            scroll = true;
+        } else if (canvas.width - clientX < deadzone) {
+            input_state.keys.set("ArrowRight", true);
+            scroll = true;
+        } 
+
+        if (clientY < deadzone) {
+            input_state.keys.set("ArrowUp", true);
+            scroll = true;
+        } else if (canvas.height - clientY < gui_height+deadzone) {
+            input_state.keys.set("ArrowDown", true);
+            scroll = true;
+        }
+
+        if (scroll) {
+            input_state.updates |= UPDATE_KEYS;
+        }
+
+        input_state.touch_scrolling = scroll;
+        
+        return scroll;
+    }
+
     canvas.addEventListener("mousemove", on_mouse_move)
     canvas.addEventListener("mousedown", on_mouse_down)
     canvas.addEventListener("mouseup", on_mouse_up)
@@ -84,8 +124,15 @@ function init_handlers(engine: Engine) {
     canvas.addEventListener("touchstart", (event) => {
         const touch = event.touches;
         if (touch.length == 1) {
+            let {clientX, clientY} = touch[0];
+
+            // Border touches for scrolling
+            if (startScroll(clientX, clientY)) {
+                return;
+            }
+
             if (input_state.tap_timeout !== 0) {
-                on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
                 
                 const event = new MouseEvent("mousedown", { button: 2 });
                 on_mouse_down(event);
@@ -98,7 +145,7 @@ function init_handlers(engine: Engine) {
 
             // Single tap
             input_state.tap_timeout = setTimeout(() => {
-                on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
                 
                 const event = new MouseEvent("mousedown", { button: 0 });
                 on_mouse_down(event);
@@ -110,6 +157,17 @@ function init_handlers(engine: Engine) {
         }
     });
     canvas.addEventListener("touchend", (event) => {
+        // Border touches for scrolling
+        if (input_state.touch_scrolling && event.touches.length == 0) {
+            input_state.keys.set("ArrowLeft", false);
+            input_state.keys.set("ArrowRight", false);
+            input_state.keys.set("ArrowUp", false);
+            input_state.keys.set("ArrowDown", false);
+
+            input_state.updates |= UPDATE_KEYS;
+            return;
+        }
+
         if (input_state.touchmove) {
             // MAAAANN I hate mobile devices
             const event1 = new MouseEvent("mousedown", { button: 0 });
@@ -134,13 +192,6 @@ function init_handlers(engine: Engine) {
         if (touch.length == 1) {
             on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
             input_state.touchmove = true;
-        } else if (touch.length == 2) {
-            on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
-            input_state.center_mouse_button = true;
-        }
-
-        if (touch.length != 2) {
-            input_state.center_mouse_button = false;
         }
     });
 
@@ -150,7 +201,6 @@ function init_handlers(engine: Engine) {
         if (event.code === "KeyR") {
             engine.refresh_client = true;
         }
-
         input_state.keys.set(event.code, true);
         input_state.updates |= UPDATE_KEYS;
     });
