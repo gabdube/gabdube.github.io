@@ -474,138 +474,105 @@ impl NavigationState {
         return false;
     }
 
-    // Funnel algorithm
-    fn compute_funnel(
+    fn inner_funnel(
         &self,
         start: PositionF32,
-        end: PositionF32,
         gates: &[[PositionF32; 2]],
         output: &mut Vec<PositionF32>,
     ) {
-        /// By computing the cross product of the apex, the opposite point, and the new point we can find
-        /// if moving one side would tighten the funnel (if the cross product returns a smaller value)
-        fn cross_product(apex: PositionF32, a: PositionF32, b: PositionF32) -> f32 {
-            let ax = a.x - apex.x;
-            let ay = a.y - apex.y;
-            let bx = b.x - apex.x;
-            let by = b.y - apex.y;
-
-            // dbg!("cross {:?} {:?} {:?} = {}", apex, a, b,  bx*ay - ax*by);
-
-            bx*ay - ax*by
+        #[derive(Debug)]
+        struct FunnelApex {
+            pub apex: PositionF32,
+            pub left_index: usize,
+            pub right_index: usize,
         }
 
-        assert!(gates.len() >= 1, "Funnel algorithm requires that rough_output contains at least one node");
-
-        // Path always begins with the start node
-        output.push(start);
-
-        let mut apex = start;
-        let mut right_index = 0;
-        let mut left_index = 0;
-        let [mut left, mut right] = gates.first().map(|[left, right]| [*left, *right] ).unwrap();
+        let mut funnel_apex = FunnelApex { 
+            apex: start,
+            left_index: 0, right_index: 0,
+        };
 
         let gates_count = gates.len();
         let mut gate_index = 1;
-        let mut iter_count = 0;
         while gate_index < gates_count {
+            let right = gates[funnel_apex.right_index][1];
+            let left = gates[funnel_apex.left_index][0];
             let new_right = gates[gate_index][1];
             let new_left = gates[gate_index][0];
 
-            if iter_count == 10 {
-                break;
-            }
-            iter_count += 1;
+            // Try to pull the right vertex (green on the funnel debug)
+            if right == new_right {
+                funnel_apex.right_index = gate_index;
+            } else {
+                // Check if pulling the right vertex will tighten the funnel
+                // (If returned value of `orient_point` is less than 0)
+                if orient_point(funnel_apex.apex, right, new_right) <= 0.0 {
+                    // Check if the funnel degenerates into a line
+                    // (If returned value of `orient_point` is less than 0)
+                    if orient_point(funnel_apex.apex, left, new_right) < 0.0 {
+                        // Set new apex
+                        funnel_apex.apex = left;
+                        output.push(funnel_apex.apex);
 
-            // Right vertex
-            // cross_product will return >= 0 if moving the `right` point to `new_right` would tighten the funnel
-            if cross_product(apex, right, new_right) >= 0.0 {
-                // cross_product of `apex`, `left`, and `new_right` checks if the funnel degenerates to a line segment
-                if right == apex || cross_product(apex, left, new_right) < 0.0 { 
-                    // If it doesn't we move the funnel point
-                    right_index = gate_index;
-                    right = new_right;
-                } else {
-                    // If the funnel degenerates to a line segment. We need to move the apex to the current opposite point (left in this case)
-                    // The new apex will a point in the path.
-                    
-                    // Insert pivot point
-                    output.push(left);
+                        // Resets the gate to the new pivot
+                        gate_index = funnel_apex.left_index + 1;
+                        funnel_apex.right_index = gate_index;
+                        funnel_apex.left_index = gate_index;
 
-                    // Resets loop at gate index
-                    right_index = left_index;
-                    gate_index = left_index+1;
-
-                    // Update apex & reset gates
-                    apex = left;
-                    left = apex;
-                    right = apex;
-
-                    continue;
+                        continue;
+                    } else {
+                        funnel_apex.right_index = gate_index;
+                    }
                 }
             }
 
-            // Left vertex
-            // cross_product will return <= 0 if moving the `left` point to `new_left` would tighten the funnel
-            if cross_product(apex, left, new_left) <= 0.0 {
-                if left == apex || cross_product(apex, right, new_left) > 0.0 {
-                    left_index = gate_index;
-                    left = new_left;
-                } else {
-                    output.push(right);
-                    
-                    left_index = right_index;
-                    gate_index = right_index+1;
+            // Try to pull the left vertex (blue on the funnel debug)
+            if left == new_left {
+                funnel_apex.left_index = gate_index;
+            } else {
+                // Check if pulling the left vertex will tighten the funnel
+                // (If returned value of `orient_point` is bigger than 0)
+                if orient_point(funnel_apex.apex, left, new_left) >= 0.0 {
+                    // Check if the funnel degenerates into a line
+                    // (If returned value of `orient_point` is less than 0)
+                    if orient_point(funnel_apex.apex, new_left, right) < 0.0 {
+                        // Set new apex
+                        funnel_apex.apex = right;
+                        output.push(funnel_apex.apex);
 
-                    apex = right;
-                    right = apex;
-                    left = apex;
+                        // Resets the gate to the new pivot
+                        gate_index = funnel_apex.right_index + 1;
+                        funnel_apex.right_index = gate_index;
+                        funnel_apex.left_index = gate_index;
 
-                    continue;
+                        continue;
+                    } else {
+                        funnel_apex.left_index = gate_index;
+                    }
                 }
             }
 
             gate_index += 1;
         }
 
-        // Process the path to the `end` node.
-        loop {
-            if right_index >= gates_count && left_index >= gates_count {
-                break;
-            } else {
-                if left_index < gates_count {
-                    left = gates[left_index][0];
-                }
+    }
 
-                if right_index < gates_count {
-                    right = gates[right_index][1];
-                }
-            }
-            
-            if apex != right && cross_product(apex, left, end) > 0.0 { 
-                output.push(left);
-                apex = left;
+    // Funnel algorithm
+    fn compute_funnel(
+        &self,
+        start: PositionF32,
+        end: PositionF32,
+        gates: &mut Vec<[PositionF32; 2]>,
+        output: &mut Vec<PositionF32>,
+    ) {
+        assert!(gates.len() >= 1, "Funnel algorithm requires that rough_output contains at least one node");
 
-                left_index +=1;
-                right_index = left_index;
-    
-                continue;
-            } else {
-                right_index += 1;
-            }
-        
-            if apex != left && cross_product(apex, right, end) < 0.0 {
-                output.push(right);
-                apex = right;
+        // Path always begins with the start node
+        output.push(start);
 
-                right_index +=1;
-                left_index = right_index;
-
-                continue;
-            } else {
-                left_index += 1;
-            }
-        }
+        // Add the end point as a gate
+        gates.push([end, end]);
+        self.inner_funnel(start, gates, output);
 
         // Path always ends with the end node
         output.push(end);
@@ -898,7 +865,6 @@ fn orient_point(p1: PositionF32, p2: PositionF32, p3: PositionF32) -> f32 {
     // robust-rs orients Y-axis upwards, our convention is Y downwards. This means that the interpretation of the result must be flipped
     robust::orient2d(p1.into(), p2.into(), p3.into()) as f32
 }
-
 
 impl StoreLoad for NavigationState {
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {

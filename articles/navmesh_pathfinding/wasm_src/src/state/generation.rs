@@ -25,11 +25,11 @@ pub fn init(game: &mut GameClient) {
     
     game.state.value = GameStateValue::Generation;
     wd.data.gui.set_state(game.state.value, GameInputType::Select);
-    // wd.data.common.debug_flags.0 = DebugFlags::SHOW_NAVMESH;
+    // wd.data.common.debug_flags.0 = crate::data::base::DebugFlags::SHOW_NAVMESH | crate::data::base::DebugFlags::SHOW_PATH_FUNNEL;
     // wd.data.gui.set_debug_flags(wd.data.common.debug_flags);
 
     // wd.world.order_sprites(false);
-    // wd.world.select_sprite_at_position(pos(450.0, 130.0));
+    // wd.world.select_sprite_at_position(pos(110.0, 300.0));
 }
 
 

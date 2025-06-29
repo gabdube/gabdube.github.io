@@ -11,9 +11,17 @@ pub fn update(game: &mut GameClient) {
 
     if data.gui.position_outside_gui(common.mouse_position) {
         if common.primary_mouse_just_pressed() {
+            let position = common.mouse_position - common.view_offset;
+            world.clear_selected_sprites();
+            world.select_sprite_at_position(position);
+        }
+
+        if common.secondary_mouse_just_pressed() {
+            if let Some(start) = selected_pawn_position(world) {
+                let mut output = Vec::with_capacity(8);
                 let position = common.mouse_position - common.view_offset;
-                world.clear_selected_sprites();
-                world.select_sprite_at_position(position);
+                data.navigation.compute_path(start, position, &mut output);
+            }
         }
 
         if world.selected_sprites().len() > 0 {

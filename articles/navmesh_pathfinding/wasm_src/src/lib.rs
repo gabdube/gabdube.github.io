@@ -149,6 +149,7 @@ impl GameClient {
 
 impl GameClient {
     pub fn on_reload(&mut self) {
+        state::generation::init(self);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {
