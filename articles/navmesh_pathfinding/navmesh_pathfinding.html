@@ -23,13 +23,13 @@
     <div id="content">
       <div>
         <p>
-          Pathfinding is complex. When using a off-the-shelf game engine (like Unity), this is not a problem people have to worry about.
+          Pathfinding is complex. When using an off-the-shelf game engine (like Unity), this is not a problem people have to worry about.
           However, with a custom game engine, developing a pathfinding system is essential, and it needs to be coded (mostly) from scratch.
         </p>
-        <p>Good news, there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google search away.</p>
-        <p>Bad news, theory is different than practice, the more you move away from the simple stuff (like grid based pathfinding) the more fragmented the information becomes and the harder is becomes to piece everything together.</p>
-        <p>This is a interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh, computing the optimal path using A-star, to generating the final path. Using Rust of course.</p>
-        <p>If your screen width is smaller than 1300 pixels, the interactive demo will be hidden by default. It is MUCH better to run it on a desktop. </p>
+        <p>Good news, there are plenty of high quality articles online. Understanding the basics of pathfinding is just a few google searches away.</p>
+        <p>Bad news, theory is different from practice, the more you move away from the simple stuff (like grid based pathfinding), the more fragmented the information becomes and the harder it becomes to piece everything together.</p>
+        <p>This is an interactive article explaining all the steps I've done to build my own 2D pathfinding utility, from building the navmesh, computing the optimal path using A-star, to generating the final path. Using Rust of course.</p>
+        <p>If your screen width is smaller than 1300 pixels, the interactive demo will be hidden by default. It is <i>much</i> better to run it on a desktop. </p>
         <p>
           The code for this demo is available on github <a href="https://github.com/gabdube/gabdube.github.io/tree/master/articles/navmesh_pathfinding" target="_blank">HERE</a> and all of the pathfinding logic
           is in <a href="https://github.com/gabdube/gabdube.github.io/blob/master/articles/navmesh_pathfinding/wasm_src/src/data/navigation.rs" target="_blank">THIS</a> file
@@ -65,14 +65,14 @@
         <h2 id="hTriangulate" class="article-h"><a href="#hTriangulate">Using Delaunay triangulation to generate the base navmesh</a></h2>
         
         <p>
-          The base of a navmesh is really just a mesh of interconnected polygons, in this case triangles.
+          The base of a navmesh is really just a mesh of interconnected polygons, in this case, triangles.
           Navmesh generation is usually done through a "baking" step that takes 2D or 3D objects as inputs.
         </p>
 
         <p>
           The best way to generate a navmesh is called <a href="https://en.wikipedia.org/wiki/Delaunay_triangulation" target="_blank">Delaunay triangulation</a>. 
           Delaunay triangulation is cheap to compute and can easily process thousands of vertices in only a few ms, even on less powerful hardware.
-          Moreover, you don't need to implement it from scratch; there are many libraries, in every language, ready to be used. Most of them are small, self contained, and REALLY optimized.
+          Moreover, you don't need to implement it from scratch; there are many libraries, in every language, ready to be used. Most of them are small, self contained, and <i>really</i> optimized.
         </p>
 
         <p>
@@ -83,12 +83,12 @@
         </p>
 
         <p>
-          In this demo, I'm using delaunator because it is the most simple. The source code consists of a  <a href="https://docs.rs/delaunator/1.0.2/src/delaunator/lib.rs.html#1-635">single file with approximately 600 lines of code</a>.
+          In this demo, I'm using delaunator because it is the simplest. The source code consists of a  <a href="https://docs.rs/delaunator/1.0.2/src/delaunator/lib.rs.html#1-635">single file with approximately 600 lines of code</a>.
           However, this simplicity comes with limitations, as detailed in the <b>Limitations & Steps Forward</b> section.
         </p>
 
         <p>
-          Using delaunator, the generation is done by building a list of points (also called vertices), and the calling the triangulate function:
+          Using delaunator, the generation is done by building a list of points (also called vertices), and then calling the triangulate function:
 
           <p>
             <pre class="hljs" style="display: block; overflow-x: auto; padding: 0.5em; background: rgb(43, 43, 43); color: rgb(186, 186, 186);"><span class="hljs-keyword" >pub</span> <span class="hljs-function"><span class="hljs-keyword" >fn</span> <span class="hljs-title">triangulate</span></span>(points: &amp;[<span>Point</span>]) -&gt; <span>Triangulation</span></pre>
@@ -96,8 +96,8 @@
         </p>
 
         <p>
-          When working with sprites, first add the limits of the world and then, for each sprite with collisions, add the bounding box coordinates.
-          We're also saving the bounding boxes of each one of those sprites, we will need them to remove the unreachable nodes in the following steps.
+          When working with sprites, first add the limits of the world and then, for each sprite that has collisions, add the bounding box coordinates.
+          We also save the bounding boxes for each of these sprites as we will need them to remove unreachable nodes in the subsequent steps.
         </p>
 
         <p>
@@ -196,7 +196,7 @@
         <h2 id="hFindTriangle" class="article-h"><a href="#hFindTriangle">Mapping a point inside the navmesh</a></h2>
 
         <p>
-          One of the most basic thing to query in a navmesh is in which triangle an point is located. Brute forcing is possible by looping over every
+          One of the most basic things to query in a navmesh is in which triangle an point is located. Brute forcing is possible by looping over every
           triangle and check if the point is inside. However, thanks to how the navmesh is built, it is possible to query the information with much fewer instructions.
         </p>
 
@@ -243,8 +243,8 @@
         <h2 id="hGenerateGraph" class="article-h"><a href="#hGenerateGraph">Generate a graph</a></h2>
 
         <p>
-          The A* algorithm works on a graph, however a navmesh is not a graph. Building a pathfinding graph can be done using  many different techniques, and you may not even need a navmesh!
-          For this demo, I'm using the simplest method I could find: the navmesh triangles are the cells, and the cost to move between the cells is the distance between each triangle 
+          The A* algorithm works on a graph, however our navmesh is not yet a graph. We need to define what is a cell and what is the cost function to move between them.
+          For this demo, I'm using the simplest method I could find: the navmesh triangles are the cells, and the cost to move between the cells is the distance between each triangle's 
           <a href="https://en.wikipedia.org/wiki/Incenter" target="_blank">incenter</a>. There is also a very good article by Red Blob games called
           <a href="https://theory.stanford.edu/~amitp/GameProgramming/MapRepresentations.html">map representation</a> that goes deeper into the subject.
         </p>
@@ -281,7 +281,7 @@
         </p>
 
         <p>
-          The graph generate is done by looping over each triangle in the navmesh, querying the neighbors and storing the results in the <code>NavNode</code> struct.
+          The graph generation is done by looping over each triangle in the navmesh, querying the neighbors and storing the results in the <code>NavNode</code> struct.
           The nodes are stored in a <code>Vec&lt;NavNode&gt;</code> that maps to the navmesh triangles. 
         </p>
 
@@ -301,7 +301,7 @@
 
         <p>
           Next we need to remove the blocked nodes from the graph. To detect which node is blocked, check if the center of a node is in the bounding box saved in step #1. 
-          The algorithm brute force it by checking each bounding box for each node in the graph. The scaling is a problem for future me.
+          The algorithm uses a brute-force approach by checking each bounding box for each node in the graph. The scaling is a problem for future me.
         </p>
 
         <p>
