@@ -1487,6 +1487,13 @@ function init_handlers(engine) {
             on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
             input_state.touchmove = true;
         }
+        else if (touch.length == 2) {
+            on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+            input_state.center_mouse_button = true;
+        }
+        if (touch.length != 2) {
+            input_state.center_mouse_button = false;
+        }
     });
     canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
     window.addEventListener("keydown", (event) => {
