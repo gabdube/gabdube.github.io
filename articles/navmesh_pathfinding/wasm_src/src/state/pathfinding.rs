@@ -16,14 +16,6 @@ pub fn update(game: &mut GameClient) {
             world.select_sprite_at_position(position);
         }
 
-        if common.secondary_mouse_just_pressed() {
-            if let Some(start) = selected_pawn_position(world) {
-                let mut output = Vec::with_capacity(8);
-                let position = common.mouse_position - common.view_offset;
-                data.navigation.compute_path(start, position, &mut output);
-            }
-        }
-
         if world.selected_sprites().len() > 0 {
             if common.debug_flags.debug_any_path() {
                 debug_pathfinding(game);

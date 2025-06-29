@@ -505,10 +505,8 @@ impl NavigationState {
                 funnel_apex.right_index = gate_index;
             } else {
                 // Check if pulling the right vertex will tighten the funnel
-                // (If returned value of `orient_point` is less than 0)
                 if orient_point(funnel_apex.apex, right, new_right) <= 0.0 {
                     // Check if the funnel degenerates into a line
-                    // (If returned value of `orient_point` is less than 0)
                     if orient_point(funnel_apex.apex, left, new_right) < 0.0 {
                         // Set new apex
                         funnel_apex.apex = left;
@@ -531,10 +529,8 @@ impl NavigationState {
                 funnel_apex.left_index = gate_index;
             } else {
                 // Check if pulling the left vertex will tighten the funnel
-                // (If returned value of `orient_point` is bigger than 0)
                 if orient_point(funnel_apex.apex, left, new_left) >= 0.0 {
                     // Check if the funnel degenerates into a line
-                    // (If returned value of `orient_point` is less than 0)
                     if orient_point(funnel_apex.apex, new_left, right) < 0.0 {
                         // Set new apex
                         funnel_apex.apex = right;
