@@ -179,6 +179,10 @@ body.article.focus {
     grid-template-columns: [article] 100% [canvas] 0px;
 }
 
+body.article.focus-game {
+    grid-template-columns: [article] 0px [canvas] 100%;
+}
+
 body.article > header {
     grid-row-start: header;
     grid-column-start: article;

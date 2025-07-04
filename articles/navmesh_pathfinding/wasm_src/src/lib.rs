@@ -11,10 +11,11 @@ mod state;
 mod output;
 mod store;
 
+use wasm_bindgen::prelude::*;
 use fnv::FnvHashMap;
 use error::Error;
 use store::StoreLoad;
-use wasm_bindgen::prelude::*;
+
 
 #[wasm_bindgen]
 pub struct GameClientInit {
@@ -187,7 +188,7 @@ impl GameClient {
 /// Export the game client into an array of bytes
 #[wasm_bindgen]
 pub fn save(mut client: GameClient) -> Box<[u8]> {
-    client.as_bytes().to_vec().into_boxed_slice()
+    client.as_bytes()
 }
 
 /// Load the game client from an array of bytes

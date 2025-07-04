@@ -9,10 +9,10 @@ https://gabdube.github.io/
 Building the rust source of a demo
 
 ```
-cd articles/navmesh_pathfinding/wasm_src
+cd articles/minimal_retained_rust_gui/wasm_src
 wasm-pack build --out-dir ../build --target web
-cp ../build/navmesh_pathfinding_demo.js ../
-cp ../build/navmesh_pathfinding_demo_bg.wasm ../
+cp ../build/minimal_retained_rust_gui.js ../
+cp ../build/minimal_retained_rust_gui_bg.wasm ../
 
 ```
 

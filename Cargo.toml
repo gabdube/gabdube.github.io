@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "local-server",
     "articles/navmesh_pathfinding/wasm_src",
+    "articles/minimal_retained_rust_gui/wasm_src",
+    "articles/isometric_worldgen/wasm_src",
 ]
 
 [profile.release]

@@ -12,4 +12,9 @@ export default [
         output: { file: './articles/navmesh_pathfinding/navmesh_pathfinding.js', format: 'es' },
         plugins
     },
+    {
+        input: './articles/minimal_retained_rust_gui/ts_src/minimal_retained_rust_gui.ts',
+        output: { file: './articles/minimal_retained_rust_gui/minimal_retained_rust_gui.js', format: 'es' },
+        plugins
+    },
 ];

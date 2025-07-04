@@ -1,0 +1,19 @@
+[package]
+name = "minimal_retained_rust_gui_demo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+
+[dependencies]
+
+# Std hashmap replacement
+fnv = "1.0.7"
+
+# WASM tooling
+wasm-bindgen = "0.2.92"
+zerocopy = "0.8"
+zerocopy-derive = "0.8"
