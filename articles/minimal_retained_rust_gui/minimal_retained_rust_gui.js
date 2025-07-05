@@ -11,8 +11,27 @@ function set_last_error(msg, tb) {
 }
 
 const GAME_SRC_PATH = "/articles/minimal_retained_rust_gui/minimal_retained_rust_gui_demo.js";
+class GameUpdates {
+    constructor(protocol, buffer, output_index_ptr) {
+        this.protocol = protocol;
+        this.buffer = buffer;
+        const index = new this.protocol.OutputIndex(buffer, output_index_ptr);
+        this.messages_count = index.messages_count();
+        this.messages_size = index.messages_size();
+        this.messages_ptr = index.messages_ptr();
+        this.base_data_ptr = index.data_ptr();
+    }
+    get_message(index) {
+        const offset = this.messages_ptr + (index * this.messages_size);
+        return new this.protocol.OutputMessage(this.buffer, offset);
+    }
+    get_data(offset, size) {
+        return new Uint8Array(this.buffer, this.base_data_ptr + offset, size);
+    }
+}
 class GameInterface {
     constructor() {
+        this.protocol = null;
         this.reload_count = 0;
     }
     free() {
@@ -28,14 +47,20 @@ class GameInterface {
             return false;
         }
         await this.module.default();
+        // Protocol is a javascript module generated that the game client that informs the engine of the client data layout
+        const proto = this.module.protocol();
+        const blob = new Blob([proto], { type: 'application/javascript' });
+        const moduleUrl = URL.createObjectURL(blob);
+        this.protocol = await import(moduleUrl);
         return true;
     }
     start(assets, params) {
         const mod = this.module;
         const initial_data = mod.GameClientInit.new();
         // Config
-        initial_data.max_texture_size(params.max_texture_size);
         initial_data.view_size(params.screen_width, params.screen_height);
+        // Assets
+        initial_data.set_assets_bundle(assets.bundle);
         this.instance = mod.GameClient.initialize(initial_data);
         if (!this.instance) {
             set_last_error("Failed to start game client");
@@ -44,10 +69,45 @@ class GameInterface {
         return true;
     }
     async reload() {
-        return true;
+        try {
+            this.reload_count += 1;
+            const saved = this.module.save(this.instance);
+            this.module = await import(`${GAME_SRC_PATH}?v=${this.reload_count}`);
+            await this.module.default();
+            this.instance = this.module.load(saved);
+            return true;
+        }
+        catch (e) {
+            console.log(e);
+            return false;
+        }
+    }
+    updates() {
+        const buffer = this.get_memory();
+        const output_index_ptr = this.instance.updates_ptr();
+        return new GameUpdates(this.protocol, buffer, output_index_ptr);
+    }
+    resize(width, height) {
+        this.instance.resize(width, height);
+    }
+    get_memory() {
+        if (this.module) {
+            // If the module was already initialized, this only returns the wasm memory
+            return this.module.initSync().memory.buffer;
+        }
+        else {
+            throw "Client module is not loaded";
+        }
     }
 }
 
+function file_extension(path) {
+    const lastDotIndex = path.lastIndexOf('.');
+    if (lastDotIndex !== -1) {
+        return path.slice(lastDotIndex + 1);
+    }
+    return '';
+}
 async function fetch_text(url) {
     let response = await fetch(url)
         .catch((_) => { set_last_error(`Failed to fetch ${url}`); return null; });
@@ -86,6 +146,8 @@ async function fetch_arraybuffer(url) {
 }
 
 const ASSETS_BUNDLE = `
+TEXTURE;terrain;assets/terrain.png;
+SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 `;
 class Shader {
     constructor(vertex, fragment) {
@@ -211,6 +273,7 @@ class EngineAssets {
     }
 }
 
+const BASE_TERRAIN_CAPACITY = 1024 * 10;
 class RendererCanvas {
     constructor(container, element) {
         this.container = container;
@@ -219,7 +282,17 @@ class RendererCanvas {
         this.height = 0;
     }
 }
+class RendererShaders {
+}
+class Terrain {
+}
 class Renderer {
+    constructor() {
+        this.visible = false;
+        this.shaders = new RendererShaders();
+        this.textures = [];
+        this.terrain = new Terrain();
+    }
     init() {
         if (!this.setup_canvas()) {
             return false;
@@ -233,19 +306,156 @@ class Renderer {
         return true;
     }
     init_default_resources(assets) {
+        this.assets = assets;
+        if (!this.setup_shaders()) {
+            return false;
+        }
+        if (!this.preload_textures()) {
+            return false;
+        }
+        this.setup_terrain();
+        this.setup_uniforms();
+        this.visible = true;
         return true;
     }
-    max_texture_size() {
-        return this.ctx.getParameter(this.ctx.MAX_TEXTURE_SIZE);
+    //
+    // Resize
+    //
+    handle_resize_framebuffer() {
+        const canvas = this.canvas;
+        const display_width = canvas.container.clientWidth;
+        const display_height = canvas.container.clientHeight;
+        if (display_width == canvas.width && display_height == canvas.height) {
+            return false;
+        }
+        if (display_width == 0.0 || display_height == 0.0) {
+            this.visible = false;
+            return false;
+        }
+        const ctx = this.ctx;
+        canvas.element.width = display_width;
+        canvas.element.height = display_height;
+        canvas.width = display_width;
+        canvas.height = display_height;
+        ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, this.framebuffer);
+        ctx.bindRenderbuffer(ctx.RENDERBUFFER, this.color);
+        ctx.renderbufferStorageMultisample(ctx.RENDERBUFFER, this.get_samples(), ctx.RGBA8, canvas.width, canvas.height);
+        ctx.framebufferRenderbuffer(ctx.DRAW_FRAMEBUFFER, ctx.COLOR_ATTACHMENT0, ctx.RENDERBUFFER, this.color);
+        ctx.viewport(0, 0, canvas.width, canvas.height);
+        this.visible = true;
+        return true;
+    }
+    handle_resize_uniforms() {
+        const ctx = this.ctx;
+        const size = new Float32Array([this.canvas.width, this.canvas.height]);
+        const size_uniforms = [
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+        ];
+        for (let [shader, uniform] of size_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, size);
+        }
+    }
+    handle_resize() {
+        if (!this.handle_resize_framebuffer()) {
+            return false;
+        }
+        this.handle_resize_uniforms();
+        return true;
+    }
+    //
+    // Update
+    //
+    update_terrain(updates, message) {
+        function realloc_terrain(ctx, terrain, min_size) {
+            const new_capacity = min_size + BASE_TERRAIN_CAPACITY;
+            terrain.attributes = realloc_buffer(ctx, terrain.attributes, ctx.ARRAY_BUFFER, terrain.attributes_capacity_bytes, new_capacity);
+            terrain.attributes_capacity_bytes = new_capacity;
+        }
+        const ctx = this.ctx;
+        const offset = message.offset_bytes();
+        const size = message.size_bytes();
+        this.terrain.instance_count = message.cell_count();
+        ctx.bindVertexArray(this.terrain.vao);
+        if (size > this.terrain.attributes_capacity_bytes) {
+            realloc_terrain(ctx, this.terrain, size);
+            this.setup_terrain_vao();
+        }
+        this.terrain.attributes_size_bytes = size;
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+        ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
+    }
+    prepare_updates() {
+        this.ctx.bindVertexArray(null);
+    }
+    update_view_offset(message) {
+        const ctx = this.ctx;
+        const offset = new Float32Array(message); // message is the [x, y] view offset
+        const offset_uniforms = [
+            [this.shaders.terrain, this.shaders.terrain_uniforms[0]],
+        ];
+        for (let [shader, uniform] of offset_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, offset);
+        }
+    }
+    update_view_size(message) {
+        const ctx = this.ctx;
+        const size = new Float32Array(message); // message is the [width, height] view size
+        const size_uniforms = [
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+        ];
+        for (let [shader, uniform] of size_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, size);
+        }
+    }
+    update(game) {
+        this.prepare_updates();
+        const updates = game.updates();
+        const messages_count = updates.messages_count;
+        for (let i = 0; i < messages_count; i += 1) {
+            const message = updates.get_message(i);
+            const message_name = message.name();
+            switch (message_name) {
+                case "UpdateTerrain": {
+                    this.update_terrain(updates, message.update_terrain());
+                    break;
+                }
+                case "UpdateViewOffset": {
+                    this.update_view_offset(message.update_view_offset());
+                    break;
+                }
+                case "UpdateViewSize": {
+                    this.update_view_size(message.update_view_size());
+                    break;
+                }
+                default: {
+                    console.log(`Warning: A drawing update with an unknown type ${message_name} was received`);
+                }
+            }
+        }
     }
     //
     // Render
     //
+    render_terrain() {
+        const SPRITE_INDEX_COUNT = 6;
+        const ctx = this.ctx;
+        if (this.terrain.instance_count > 0) {
+            ctx.useProgram(this.shaders.terrain);
+            ctx.activeTexture(ctx.TEXTURE0);
+            ctx.bindTexture(ctx.TEXTURE_2D, this.terrain.texture);
+            ctx.bindVertexArray(this.terrain.vao);
+            ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, this.terrain.instance_count);
+        }
+    }
     render() {
         const ctx = this.ctx;
         const canvas = this.canvas;
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, this.framebuffer);
         ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 1.0]);
+        this.render_terrain();
         ctx.bindFramebuffer(ctx.READ_FRAMEBUFFER, this.framebuffer);
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, null);
         ctx.blitFramebuffer(0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height, ctx.COLOR_BUFFER_BIT, ctx.LINEAR);
@@ -328,6 +538,174 @@ class Renderer {
         }
         return max_samples;
     }
+    setup_shaders() {
+        const ctx = this.ctx;
+        const assets = this.assets;
+        const shaders = this.shaders;
+        const terrain = build_shader(ctx, assets, "terrain", ["in_position", "in_instance_position", "in_instance_texcoord"], ["view_position", "view_size"]);
+        if (terrain) {
+            shaders.terrain = terrain.program;
+            shaders.terrain_attributes = terrain.attributes;
+            shaders.terrain_uniforms = terrain.uniforms;
+        }
+        else {
+            return false;
+        }
+        return true;
+    }
+    preload_textures() {
+        const to_preload = ["terrain"];
+        for (let name of to_preload) {
+            const texture = this.assets.textures.get(name);
+            if (!texture) {
+                set_last_error(`Failed to preload texture ${name}: missing texture in assets`);
+                return false;
+            }
+            this.textures[texture.id] = create_texture_rgba(this.ctx, texture);
+        }
+        return true;
+    }
+    setup_terrain_vao() {
+        const TERRAIN_VERTEX_SIZE = 8;
+        const TERRAIN_SPRITE_SIZE = 16;
+        const ctx = this.ctx;
+        const [position, instance_position, instance_texcoord] = this.shaders.terrain_attributes;
+        ctx.bindVertexArray(this.terrain.vao);
+        // Vertex data
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.terrain.index);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.vertex);
+        ctx.enableVertexAttribArray(position);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, TERRAIN_VERTEX_SIZE, 0);
+        // Instance Data
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+        ctx.enableVertexAttribArray(instance_position);
+        ctx.vertexAttribPointer(instance_position, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 0);
+        ctx.vertexAttribDivisor(instance_position, 1);
+        ctx.enableVertexAttribArray(instance_texcoord);
+        ctx.vertexAttribPointer(instance_texcoord, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 8);
+        ctx.vertexAttribDivisor(instance_texcoord, 1);
+        ctx.bindVertexArray(null);
+    }
+    setup_terrain() {
+        const ctx = this.ctx;
+        const terrain = this.terrain;
+        terrain.index = ctx.createBuffer();
+        terrain.vertex = ctx.createBuffer();
+        terrain.attributes = ctx.createBuffer();
+        terrain.attributes_capacity_bytes = BASE_TERRAIN_CAPACITY;
+        terrain.attributes_size_bytes = 0;
+        terrain.instance_count = 0;
+        terrain.vao = ctx.createVertexArray();
+        const texture_id = this.assets.textures.get("terrain")?.id; // Check is handled in preload_textures
+        terrain.texture = this.textures[texture_id];
+        ctx.bindVertexArray(terrain.vao);
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, terrain.index);
+        ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, terrain.vertex);
+        ctx.bufferData(ctx.ARRAY_BUFFER, new Float32Array([
+            0.0, 0.0, // V0
+            1.0, 0.0, // V1
+            0.0, 1.0, // V2
+            1.0, 1.0, // V3
+        ]), ctx.STATIC_DRAW);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, terrain.attributes);
+        ctx.bufferData(ctx.ARRAY_BUFFER, terrain.attributes_capacity_bytes, ctx.STATIC_DRAW);
+        this.setup_terrain_vao();
+    }
+    setup_uniforms() {
+        const ctx = this.ctx;
+        const position = new Float32Array([0.0, 0.0]);
+        const size = new Float32Array([this.canvas.width, this.canvas.height]);
+        let [view_position, view_size] = this.shaders.terrain_uniforms;
+        ctx.useProgram(this.shaders.terrain);
+        ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
+    }
+}
+function build_shader(ctx, assets, shader_name, attributes_names, uniforms_names) {
+    const shader_source = assets.shaders.get(shader_name);
+    if (!shader_source) {
+        set_last_error(`Failed to find shader source for shader "${shader_name}" in assets`);
+        return;
+    }
+    const vert = create_shader(ctx, ctx.VERTEX_SHADER, shader_source.vertex);
+    const frag = create_shader(ctx, ctx.FRAGMENT_SHADER, shader_source.fragment);
+    if (!vert || !frag) {
+        set_last_error(`Failed to create shaders for "${shader_name}"`);
+        return;
+    }
+    const program = create_program(ctx, vert, frag);
+    if (!program) {
+        set_last_error(`Failed to compile shaders for "${shader_name}"`);
+        return;
+    }
+    const attributes = [];
+    for (let attribute_name of attributes_names) {
+        const loc = ctx.getAttribLocation(program, attribute_name);
+        if (loc == -1) {
+            set_last_error(`Unkown attribute "${attribute_name}" in shader "${shader_name}"`);
+            return;
+        }
+        attributes.push(loc);
+    }
+    const uniforms = [];
+    for (let uniform_name of uniforms_names) {
+        const loc = ctx.getUniformLocation(program, uniform_name);
+        if (!loc) {
+            set_last_error(`Unkown uniform "${uniform_name}" in shader "${shader_name}"`);
+            return;
+        }
+        uniforms.push(loc);
+    }
+    ctx.deleteShader(vert);
+    ctx.deleteShader(frag);
+    return {
+        program,
+        attributes,
+        uniforms,
+    };
+}
+function create_shader(ctx, type, source) {
+    const shader = ctx.createShader(type);
+    ctx.shaderSource(shader, source);
+    ctx.compileShader(shader);
+    const success = ctx.getShaderParameter(shader, ctx.COMPILE_STATUS);
+    if (success) {
+        return shader;
+    }
+    console.log(ctx.getShaderInfoLog(shader));
+    ctx.deleteShader(shader);
+}
+function create_program(ctx, vertexShader, fragmentShader) {
+    const program = ctx.createProgram();
+    ctx.attachShader(program, vertexShader);
+    ctx.attachShader(program, fragmentShader);
+    ctx.linkProgram(program);
+    const success = ctx.getProgramParameter(program, ctx.LINK_STATUS);
+    if (success) {
+        return program;
+    }
+    console.log(ctx.getProgramInfoLog(program));
+    ctx.deleteProgram(program);
+}
+function create_texture_rgba(ctx, cpu_texture) {
+    const bitmap = cpu_texture.bitmap;
+    const texture = ctx.createTexture();
+    ctx.bindTexture(ctx.TEXTURE_2D, texture);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.LINEAR);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.LINEAR);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S, ctx.CLAMP_TO_EDGE);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T, ctx.CLAMP_TO_EDGE);
+    ctx.texStorage2D(ctx.TEXTURE_2D, 1, ctx.RGBA8, bitmap.width, bitmap.height);
+    ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, bitmap.width, bitmap.height, ctx.RGBA, ctx.UNSIGNED_BYTE, bitmap);
+    return texture;
+}
+function realloc_buffer(ctx, buffer, target, old_capacity, new_capacity, copy_data) {
+    const new_buffer = ctx.createBuffer();
+    ctx.bindBuffer(target, new_buffer);
+    ctx.bufferData(target, new_capacity, ctx.DYNAMIC_DRAW);
+    ctx.deleteBuffer(buffer);
+    return new_buffer;
 }
 
 const WEBSOCKET_HOST = "localhost:8001";
@@ -393,20 +771,187 @@ function on_text_message(ws, message) {
 function on_bin_message(data) {
 }
 
+const UPDATE_MOUSE_POSITION = 0b001;
+const UPDATE_MOUSE_BUTTONS = 0b010;
+const UPDATE_KEYS = 0b100;
+// Matches `MouseButton` in `game\src\inputs.rs`
+const MOUSE_BUTTON_LEFT = 0;
+const MOUSE_BUTTON_RIGHT = 1;
+const MOUSE_BUTTON_CENTER = 2;
+class GameInput {
+    constructor() {
+        this.updates = 0;
+        this.mouse_position = [0.0, 0.0];
+        // true: button was pressed, false: button was released, null: button state wasn't changed
+        this.left_mouse_button = null;
+        this.right_mouse_button = null;
+        this.center_mouse_button = null;
+        this.tap_timeout = 0;
+        this.touch_scrolling = false;
+        this.touchmove = false;
+        this.keys = new Map();
+    }
+}
 class Engine {
     constructor() {
         this.ws = new EngineWebSocket();
         this.game = new GameInterface();
         this.assets = new EngineAssets();
         this.renderer = new Renderer();
+        this.input = new GameInput();
+        this.refresh_client = false;
         this.reload_client = false;
         this.reload = false;
         this.exit = false;
     }
 }
+//
+// Init
+//
+function init_handlers(engine) {
+    const canvas = engine.renderer.canvas.element;
+    const input_state = engine.input;
+    function on_mouse_move(event) {
+        input_state.mouse_position[0] = event.clientX - canvas.offsetLeft;
+        input_state.mouse_position[1] = event.clientY - canvas.offsetTop;
+        input_state.updates |= UPDATE_MOUSE_POSITION;
+    }
+    function on_mouse_down(event) {
+        input_state.updates |= UPDATE_MOUSE_BUTTONS;
+        if (event.button === 0) {
+            input_state.left_mouse_button = true;
+        }
+        else if (event.button === 1) {
+            input_state.center_mouse_button = true;
+        }
+        else if (event.button === 2) {
+            input_state.right_mouse_button = true;
+        }
+        event.preventDefault();
+    }
+    function on_mouse_up(event) {
+        input_state.updates |= UPDATE_MOUSE_BUTTONS;
+        if (event.button === 0) {
+            input_state.left_mouse_button = false;
+        }
+        else if (event.button === 1) {
+            input_state.center_mouse_button = false;
+        }
+        else if (event.button === 2) {
+            input_state.right_mouse_button = false;
+        }
+        event.preventDefault();
+    }
+    function startScroll(clientX, clientY) {
+        clientX = clientX - canvas.offsetLeft;
+        clientY = clientY - canvas.offsetTop;
+        // Hardcoded gui height in the wasm client
+        const gui_height = 200;
+        if (canvas.height - clientY < gui_height) {
+            return false;
+        }
+        const deadzone = 60;
+        let scroll = false;
+        if (clientX < deadzone) {
+            input_state.keys.set("ArrowLeft", true);
+            scroll = true;
+        }
+        else if (canvas.width - clientX < deadzone) {
+            input_state.keys.set("ArrowRight", true);
+            scroll = true;
+        }
+        if (clientY < deadzone) {
+            input_state.keys.set("ArrowUp", true);
+            scroll = true;
+        }
+        else if (canvas.height - clientY < gui_height + deadzone) {
+            input_state.keys.set("ArrowDown", true);
+            scroll = true;
+        }
+        if (scroll) {
+            input_state.updates |= UPDATE_KEYS;
+        }
+        input_state.touch_scrolling = scroll;
+        return scroll;
+    }
+    canvas.addEventListener("mousemove", on_mouse_move);
+    canvas.addEventListener("mousedown", on_mouse_down);
+    canvas.addEventListener("mouseup", on_mouse_up);
+    canvas.addEventListener("touchstart", (event) => {
+        const touch = event.touches;
+        if (touch.length == 1) {
+            let { clientX, clientY } = touch[0];
+            // Border touches for scrolling
+            if (startScroll(clientX, clientY)) {
+                return;
+            }
+            if (input_state.tap_timeout !== 0) {
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
+                const event = new MouseEvent("mousedown", { button: 2 });
+                on_mouse_down(event);
+                setTimeout(() => on_mouse_up(event), 50);
+                clearTimeout(input_state.tap_timeout);
+                input_state.tap_timeout = 0;
+                return;
+            }
+            // Single tap
+            input_state.tap_timeout = setTimeout(() => {
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
+                const event = new MouseEvent("mousedown", { button: 0 });
+                on_mouse_down(event);
+                setTimeout(() => on_mouse_up(event), 50);
+                clearTimeout(input_state.tap_timeout);
+                input_state.tap_timeout = 0;
+            }, 300);
+        }
+    });
+    canvas.addEventListener("touchend", (event) => {
+        // Border touches for scrolling
+        if (input_state.touch_scrolling && event.touches.length == 0) {
+            input_state.keys.set("ArrowLeft", false);
+            input_state.keys.set("ArrowRight", false);
+            input_state.keys.set("ArrowUp", false);
+            input_state.keys.set("ArrowDown", false);
+            input_state.updates |= UPDATE_KEYS;
+            return;
+        }
+        if (input_state.touchmove) {
+            // MAAAANN I hate mobile devices
+            const event1 = new MouseEvent("mousedown", { button: 0 });
+            on_mouse_down(event1);
+            setTimeout(() => on_mouse_up(event1), 50);
+            const event2 = new MouseEvent("mousedown", { button: 2 });
+            on_mouse_down(event2);
+            setTimeout(() => on_mouse_up(event2), 50);
+            input_state.touchmove = false;
+        }
+        event.preventDefault();
+    });
+    canvas.addEventListener("touchmove", (event) => {
+        const touch = event.touches;
+        clearTimeout(input_state.tap_timeout);
+        input_state.tap_timeout = 0;
+        if (touch.length == 1) {
+            on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+            input_state.touchmove = true;
+        }
+    });
+    canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
+    window.addEventListener("keydown", (event) => {
+        input_state.keys.set(event.code, true);
+        input_state.updates |= UPDATE_KEYS;
+    });
+    window.addEventListener("keyup", (event) => {
+        // console.log(event.code);
+        input_state.keys.set(event.code, false);
+        input_state.updates |= UPDATE_KEYS;
+    });
+    document.getElementById("resetDemo")?.addEventListener("click", (event) => {
+        engine.refresh_client = true;
+    });
+}
 function start_client(engine) {
     const params = {
-        max_texture_size: engine.renderer.max_texture_size(),
         screen_width: engine.renderer.canvas.width,
         screen_height: engine.renderer.canvas.height,
     };
@@ -429,6 +974,7 @@ async function init() {
     if (!start_client(engine)) {
         return null;
     }
+    init_handlers(engine);
     engine.ws.open();
     window.engine = engine;
     return engine;
@@ -436,7 +982,89 @@ async function init() {
 //
 // Updates
 //
+function on_file_changed(engine, message) {
+    // Reloading is async so we don't execute it right away in the game loop.
+    // See the `reload` function in this file
+    const ext = file_extension(message.data);
+    switch (ext) {
+        case "wasm": {
+            engine.reload_client = true;
+            engine.reload = true;
+            break;
+        }
+    }
+}
+/// Handle the updates received from the development server
+function websocket_messages(engine) {
+    const ws = engine.ws;
+    if (!ws.open) {
+        // We're using a static client with no dev server
+        return;
+    }
+    for (let i = 0; i < ws.messages_count; i++) {
+        let message = ws.messages[i];
+        switch (message.name) {
+            case "FILE_CHANGED": {
+                on_file_changed(engine, message);
+                break;
+            }
+            default: {
+                console.log("Unknown message:", message);
+            }
+        }
+    }
+    ws.messages_count = 0;
+}
+/// Check if the canvas size changed since the last call, and if so run the on resize logic
+function handle_resize(engine) {
+    if (engine.renderer.handle_resize()) {
+        const width = engine.renderer.canvas.width;
+        const height = engine.renderer.canvas.height;
+        engine.game.resize(width, height);
+    }
+}
+function game_input_updates(engine) {
+    const inputs = engine.input;
+    const game = engine.game.instance;
+    if ((inputs.updates & UPDATE_MOUSE_POSITION) > 0) {
+        game.update_mouse_position(inputs.mouse_position[0], inputs.mouse_position[1]);
+    }
+    if ((inputs.updates & UPDATE_MOUSE_BUTTONS) > 0) {
+        if (inputs.left_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_LEFT, inputs.left_mouse_button);
+        }
+        if (inputs.right_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_RIGHT, inputs.right_mouse_button);
+        }
+        if (inputs.center_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_CENTER, inputs.center_mouse_button);
+        }
+        inputs.left_mouse_button = null;
+        inputs.right_mouse_button = null;
+        inputs.center_mouse_button = null;
+    }
+    if ((inputs.updates & UPDATE_KEYS) > 0) {
+        for (let entry of inputs.keys.entries()) {
+            game.update_keys(entry[0], entry[1]);
+        }
+    }
+    inputs.keys.clear();
+    inputs.updates = 0;
+}
+/// Execute the game logic of the client for the current frame
+function game_updates(engine, time) {
+    game_input_updates(engine);
+    engine.game.instance.update(time);
+}
+/// Reads the rendering updates generated by the game client
+function renderer_updates(engine) {
+    engine.renderer.update(engine.game);
+}
 function update(engine, time) {
+    websocket_messages(engine);
+    handle_resize(engine);
+    game_updates(engine, time);
+    renderer_updates(engine);
 }
 //
 // Render

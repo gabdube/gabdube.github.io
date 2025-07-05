@@ -5,15 +5,44 @@ import { GameClient, GameClientInit } from "../build/minimal_retained_rust_gui_d
 const GAME_SRC_PATH = "/articles/minimal_retained_rust_gui/minimal_retained_rust_gui_demo.js";
 
 export interface GameInterfaceStartupParams {
-    max_texture_size: number,
     screen_width: number,
     screen_height: number,
+}
+
+export class GameUpdates {
+    protocol: any;
+    buffer: ArrayBuffer;
+    messages_count: number;
+    messages_size: number;
+    messages_ptr: number;
+    base_data_ptr: number;
+
+    constructor(protocol: any, buffer: ArrayBuffer, output_index_ptr: number) {
+        this.protocol = protocol;
+        this.buffer = buffer;
+
+        const index = new this.protocol.OutputIndex(buffer, output_index_ptr);
+        this.messages_count = index.messages_count();
+        this.messages_size = index.messages_size();
+        this.messages_ptr = index.messages_ptr();
+        this.base_data_ptr = index.data_ptr();
+    }
+
+    get_message(index: number): any {
+        const offset = this.messages_ptr + (index * this.messages_size);
+        return new this.protocol.OutputMessage(this.buffer, offset);
+    }
+
+    get_data(offset: number, size: number): Uint8Array {
+        return new Uint8Array(this.buffer, this.base_data_ptr+offset, size);
+    }
 }
 
 
 export class GameInterface {
     instance: GameClient;
     module: any;
+    protocol: any = null;
     reload_count: number = 0;
 
     free() {
@@ -31,6 +60,12 @@ export class GameInterface {
     
         await this.module.default();
 
+        // Protocol is a javascript module generated that the game client that informs the engine of the client data layout
+        const proto = this.module.protocol();
+        const blob = new Blob([proto], { type: 'application/javascript' });
+        const moduleUrl = URL.createObjectURL(blob);
+        this.protocol = await import(moduleUrl);
+
         return true;
     }
 
@@ -40,8 +75,10 @@ export class GameInterface {
         const initial_data: GameClientInit = mod.GameClientInit.new();
 
         // Config
-        initial_data.max_texture_size(params.max_texture_size);
         initial_data.view_size(params.screen_width, params.screen_height);
+
+        // Assets
+        initial_data.set_assets_bundle(assets.bundle);
 
         this.instance = mod.GameClient.initialize(initial_data);
         if (!this.instance) {
@@ -53,6 +90,39 @@ export class GameInterface {
     }
 
     async reload(): Promise<boolean> {
-        return true;
+        try {
+            this.reload_count += 1;
+    
+            const saved = this.module.save(this.instance);
+        
+            this.module = await import(`${GAME_SRC_PATH}?v=${this.reload_count}`);
+            await this.module.default();
+
+            this.instance = this.module.load(saved);
+
+            return true;
+        } catch (e) {
+            console.log(e);
+            return false;
+        }
+    }
+
+    updates(): GameUpdates {
+        const buffer = this.get_memory();
+        const output_index_ptr = this.instance.updates_ptr();
+        return new GameUpdates(this.protocol, buffer, output_index_ptr);
+    }
+
+    resize(width: number, height: number) {
+        this.instance.resize(width, height);
+    }
+
+    private get_memory(): ArrayBuffer {
+        if (this.module) {
+            // If the module was already initialized, this only returns the wasm memory
+            return this.module.initSync().memory.buffer;
+        } else {
+            throw "Client module is not loaded";
+        }
     }
 }

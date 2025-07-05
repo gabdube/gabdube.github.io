@@ -1,5 +1,6 @@
 /node_modules
 /target
+/tools/unprocessed_assets
 Cargo.lock
 package-lock.json
 .DS_Store

@@ -568,7 +568,7 @@ export class Renderer {
 
     private update_view_size(message: [number, number]) {
         const ctx = this.ctx;
-        const size = new Float32Array(message); // message is the [x, y] view offset
+        const size = new Float32Array(message); // message is the [width, height] view size
         const size_uniforms: [WebGLProgram, WebGLUniformLocation][] = [
             [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
             [this.shaders.highlight_sprites, this.shaders.highlight_sprites_uniforms[1]],

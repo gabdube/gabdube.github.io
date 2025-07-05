@@ -2,6 +2,8 @@ import { fetch_text, fetch_blob, fetch_arraybuffer } from "./helpers";
 import { set_last_error } from "./error";
 
 const ASSETS_BUNDLE = `
+TEXTURE;terrain;assets/terrain.png;
+SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 `;
 
 export class Shader {

@@ -687,7 +687,7 @@ class Renderer {
     }
     update_view_size(message) {
         const ctx = this.ctx;
-        const size = new Float32Array(message); // message is the [x, y] view offset
+        const size = new Float32Array(message); // message is the [width, height] view size
         const size_uniforms = [
             [this.shaders.sprites, this.shaders.sprites_uniforms[1]],
             [this.shaders.highlight_sprites, this.shaders.highlight_sprites_uniforms[1]],
@@ -1463,7 +1463,6 @@ function init_handlers(engine) {
     function startScroll(clientX, clientY) {
         clientX = clientX - canvas.offsetLeft;
         clientY = clientY - canvas.offsetTop;
-        console.log(clientX, clientY);
         // Hardcoded gui height in the wasm client
         const gui_height = 200;
         if (canvas.height - clientY < gui_height) {

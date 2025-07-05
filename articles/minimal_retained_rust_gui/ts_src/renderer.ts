@@ -1,5 +1,8 @@
 import { set_last_error } from "./error";
+import { GameInterface, GameUpdates } from "./game_interface";
 import { EngineAssets, Texture } from "./assets";
+
+const BASE_TERRAIN_CAPACITY = 1024 * 10;
 
 class RendererCanvas {
     container: HTMLElement;
@@ -15,11 +18,36 @@ class RendererCanvas {
     }
 }
 
+class RendererShaders {
+    terrain_attributes: number[];  // position, instance_position, instance_texcoord
+    terrain_uniforms: WebGLUniformLocation[];  // View position, View size
+    terrain: WebGLProgram;
+}
+
+class Terrain {
+    index: WebGLBuffer;
+    vertex: WebGLBuffer;
+    attributes: WebGLBuffer;
+    attributes_size_bytes: number;
+    attributes_capacity_bytes: number;
+    texture: WebGLTexture;
+    instance_count: number;
+    vao: WebGLVertexArrayObject;
+}
+
 export class Renderer {
     canvas: RendererCanvas;
     ctx: WebGL2RenderingContext;
     framebuffer: WebGLFramebuffer;
     color: WebGLRenderbuffer;
+    visible: boolean = false;
+
+    assets: EngineAssets;
+
+    shaders: RendererShaders = new RendererShaders();
+    textures: WebGLTexture[] = [];
+
+    terrain: Terrain = new Terrain();
 
     init(): boolean {
         if ( !this.setup_canvas() ) { return false };
@@ -30,16 +58,180 @@ export class Renderer {
     }
 
     init_default_resources(assets: EngineAssets): boolean {
+        this.assets = assets;
+
+        if (!this.setup_shaders()) { return false; };
+        if (!this.preload_textures()) { return false; }
+
+        this.setup_terrain();
+        this.setup_uniforms();
+
+        this.visible = true;
+
         return true;
     }
 
-    max_texture_size(): number {
-        return this.ctx.getParameter(this.ctx.MAX_TEXTURE_SIZE);
+    //
+    // Resize
+    //
+
+    private handle_resize_framebuffer(): boolean {
+        const canvas = this.canvas;
+        const display_width  = canvas.container.clientWidth;
+        const display_height = canvas.container.clientHeight;
+        if (display_width == canvas.width && display_height == canvas.height) {
+            return false;
+        }
+
+        if (display_width == 0.0 || display_height == 0.0) {
+            this.visible = false;
+            return false;
+        }
+
+        const ctx = this.ctx;
+        canvas.element.width = display_width;
+        canvas.element.height = display_height;
+        canvas.width = display_width;
+        canvas.height = display_height;
+
+        ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, this.framebuffer);
+        ctx.bindRenderbuffer(ctx.RENDERBUFFER, this.color);
+        ctx.renderbufferStorageMultisample(ctx.RENDERBUFFER, this.get_samples(), ctx.RGBA8, canvas.width, canvas.height); 
+        ctx.framebufferRenderbuffer(ctx.DRAW_FRAMEBUFFER, ctx.COLOR_ATTACHMENT0, ctx.RENDERBUFFER, this.color);
+        ctx.viewport(0, 0, canvas.width, canvas.height);
+        this.visible = true;
+
+        return true;
+    }
+
+    private handle_resize_uniforms() {
+        const ctx = this.ctx;
+        const size = new Float32Array([this.canvas.width, this.canvas.height]);
+        const size_uniforms = [
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+        ];
+
+        for (let [shader, uniform] of size_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, size);
+        }
+    }
+
+    handle_resize(): boolean {
+        if (!this.handle_resize_framebuffer()) {
+            return false;
+        }
+
+        this.handle_resize_uniforms();
+
+        return true;
+    }
+
+    //
+    // Update
+    //
+
+    private update_terrain(updates: GameUpdates, message: any) {
+        function realloc_terrain(ctx: WebGL2RenderingContext, terrain: Terrain, min_size: number) {
+            const new_capacity = min_size + BASE_TERRAIN_CAPACITY;
+            terrain.attributes = realloc_buffer(ctx, terrain.attributes, ctx.ARRAY_BUFFER, terrain.attributes_capacity_bytes, new_capacity, false);
+            terrain.attributes_capacity_bytes = new_capacity;
+        }
+
+        const ctx = this.ctx;
+
+        const offset = message.offset_bytes();
+        const size = message.size_bytes();
+        this.terrain.instance_count = message.cell_count();
+
+        ctx.bindVertexArray(this.terrain.vao);
+
+        if (size > this.terrain.attributes_capacity_bytes) {
+            realloc_terrain(ctx, this.terrain, size)
+            this.setup_terrain_vao();
+        }
+        
+        this.terrain.attributes_size_bytes = size;
+        
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+        ctx.bufferSubData(ctx.ARRAY_BUFFER, 0, updates.get_data(offset, size));
+    }
+
+    private prepare_updates() {
+        this.ctx.bindVertexArray(null);
+    }
+
+    private update_view_offset(message: [number, number]) {
+        const ctx = this.ctx;
+        const offset = new Float32Array(message); // message is the [x, y] view offset
+        const offset_uniforms: [WebGLProgram, WebGLUniformLocation][] = [
+            [this.shaders.terrain, this.shaders.terrain_uniforms[0]],
+        ];
+
+        for (let [shader, uniform] of offset_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, offset);
+        }
+    }
+
+    private update_view_size(message: [number, number]) {
+        const ctx = this.ctx;
+        const size = new Float32Array(message); // message is the [width, height] view size
+        const size_uniforms: [WebGLProgram, WebGLUniformLocation][] = [
+            [this.shaders.terrain, this.shaders.terrain_uniforms[1]],
+        ];
+
+        for (let [shader, uniform] of size_uniforms) {
+            ctx.useProgram(shader);
+            ctx.uniform2fv(uniform, size);
+        }
+    }
+
+    update(game: GameInterface) { 
+        this.prepare_updates();
+
+        const updates = game.updates();
+        const messages_count = updates.messages_count;
+        for (let i = 0; i < messages_count; i += 1) {
+            const message = updates.get_message(i);
+            const message_name = message.name();
+            switch (message_name) {
+                case "UpdateTerrain": {
+                    this.update_terrain(updates, message.update_terrain())
+                    break;
+                }
+                case "UpdateViewOffset": {
+                    this.update_view_offset(message.update_view_offset());
+                    break;
+                }
+                case "UpdateViewSize": {
+                    this.update_view_size(message.update_view_size());
+                    break;
+                }
+                default: {
+                    console.log(`Warning: A drawing update with an unknown type ${message_name} was received`);
+                }
+            }
+        }
     }
     
     //
     // Render
     //
+
+    private render_terrain() {
+        const SPRITE_INDEX_COUNT: number = 6;
+        const ctx = this.ctx;
+
+        if (this.terrain.instance_count > 0) {
+            ctx.useProgram(this.shaders.terrain);
+            ctx.activeTexture(ctx.TEXTURE0);
+
+            ctx.bindTexture(ctx.TEXTURE_2D, this.terrain.texture);
+            ctx.bindVertexArray(this.terrain.vao);
+            ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, this.terrain.instance_count);
+        }
+    }
 
     render() {
         const ctx = this.ctx;
@@ -47,6 +239,8 @@ export class Renderer {
 
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, this.framebuffer);
         ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 1.0]);
+
+        this.render_terrain();
 
         ctx.bindFramebuffer(ctx.READ_FRAMEBUFFER, this.framebuffer);
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, null);
@@ -149,4 +343,238 @@ export class Renderer {
 
         return max_samples
     }
+
+    private setup_shaders(): boolean {
+        const ctx = this.ctx;
+        const assets = this.assets;
+        const shaders = this.shaders;
+
+        const terrain = build_shader(ctx, assets, "terrain",
+            ["in_position", "in_instance_position", "in_instance_texcoord"],
+            ["view_position", "view_size"]
+        );
+        if (terrain) {
+            shaders.terrain = terrain.program;
+            shaders.terrain_attributes = terrain.attributes;
+            shaders.terrain_uniforms = terrain.uniforms;
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+
+    private preload_textures(): boolean {
+        const to_preload = ["terrain"];
+
+        for (let name of to_preload) {
+            const texture = this.assets.textures.get(name);
+            if (!texture) {
+                set_last_error(`Failed to preload texture ${name}: missing texture in assets`);
+                return false;
+            }
+
+            this.textures[texture.id] = create_texture_rgba(this.ctx, texture);
+        }
+
+        return true;
+    }
+
+    private setup_terrain_vao() {
+        const TERRAIN_VERTEX_SIZE = 8;
+        const TERRAIN_SPRITE_SIZE = 16;
+        const ctx = this.ctx;
+        const [position, instance_position, instance_texcoord] = this.shaders.terrain_attributes;
+
+        ctx.bindVertexArray(this.terrain.vao);
+
+        // Vertex data
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.terrain.index);
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.vertex);
+        ctx.enableVertexAttribArray(position);
+        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, TERRAIN_VERTEX_SIZE, 0);
+
+        // Instance Data
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+
+        ctx.enableVertexAttribArray(instance_position);
+        ctx.vertexAttribPointer(instance_position, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 0);
+        ctx.vertexAttribDivisor(instance_position, 1);
+
+        ctx.enableVertexAttribArray(instance_texcoord);
+        ctx.vertexAttribPointer(instance_texcoord, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 8);
+        ctx.vertexAttribDivisor(instance_texcoord, 1);
+
+        ctx.bindVertexArray(null);
+    }
+
+    private setup_terrain() {
+        const ctx = this.ctx;
+        const terrain = this.terrain;
+        
+        terrain.index = ctx.createBuffer();
+        terrain.vertex = ctx.createBuffer();
+        terrain.attributes = ctx.createBuffer();
+        terrain.attributes_capacity_bytes = BASE_TERRAIN_CAPACITY;
+        terrain.attributes_size_bytes = 0;
+        terrain.instance_count = 0;
+
+        terrain.vao = ctx.createVertexArray();
+
+        const texture_id = this.assets.textures.get("terrain")?.id as number;  // Check is handled in preload_textures
+        terrain.texture = this.textures[texture_id];
+
+        ctx.bindVertexArray(terrain.vao);
+
+        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, terrain.index);
+        ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, terrain.vertex);
+        ctx.bufferData(ctx.ARRAY_BUFFER,  new Float32Array([
+            0.0, 0.0, // V0
+            1.0, 0.0, // V1
+            0.0, 1.0, // V2
+            1.0, 1.0, // V3
+        ]), ctx.STATIC_DRAW);
+
+        ctx.bindBuffer(ctx.ARRAY_BUFFER, terrain.attributes);
+        ctx.bufferData(ctx.ARRAY_BUFFER, terrain.attributes_capacity_bytes, ctx.STATIC_DRAW);
+
+        this.setup_terrain_vao();
+    }
+
+    private setup_uniforms() {
+        const ctx = this.ctx;
+        const position = new Float32Array([0.0, 0.0]);
+        const size = new Float32Array([this.canvas.width, this.canvas.height]);
+
+        let [view_position, view_size] = this.shaders.terrain_uniforms;
+        ctx.useProgram(this.shaders.terrain);
+        ctx.uniform2fv(view_position, position);
+        ctx.uniform2fv(view_size, size);
+    }
+}
+
+function build_shader(
+    ctx: WebGL2RenderingContext,
+    assets: EngineAssets,
+    shader_name: string,
+    attributes_names: string[],
+    uniforms_names: string[]
+): {program: WebGLProgram, attributes: number[], uniforms: WebGLUniformLocation[]} | undefined 
+{
+    const shader_source = assets.shaders.get(shader_name);
+    if (!shader_source) {
+        set_last_error(`Failed to find shader source for shader "${shader_name}" in assets`);
+        return;
+    }
+
+    const vert = create_shader(ctx, ctx.VERTEX_SHADER, shader_source.vertex);
+    const frag = create_shader(ctx, ctx.FRAGMENT_SHADER, shader_source.fragment);
+    if (!vert || !frag) {
+        set_last_error(`Failed to create shaders for "${shader_name}"`);
+        return;
+    }
+
+    const program = create_program(ctx, vert, frag);
+    if (!program) {
+        set_last_error(`Failed to compile shaders for "${shader_name}"`);
+        return;
+    }
+
+    const attributes: number[] = []
+    for (let attribute_name of attributes_names) {
+        const loc = ctx.getAttribLocation(program, attribute_name);
+        if (loc == -1) {
+            set_last_error(`Unkown attribute "${attribute_name}" in shader "${shader_name}"`);
+            return
+        }
+
+        attributes.push(loc);
+    }
+
+    const uniforms: WebGLUniformLocation[] = [];
+    for (let uniform_name of uniforms_names) {
+        const loc = ctx.getUniformLocation(program, uniform_name) as any;
+        if (!loc) {
+            set_last_error(`Unkown uniform "${uniform_name}" in shader "${shader_name}"`);
+            return
+        }
+
+        uniforms.push(loc);
+    }
+
+    ctx.deleteShader(vert);
+    ctx.deleteShader(frag);
+
+    return {
+        program,
+        attributes,
+        uniforms,
+    };
+}
+
+function create_shader(ctx: WebGL2RenderingContext, type: GLenum, source: string): WebGLShader|undefined {
+    const shader = ctx.createShader(type) as WebGLShader;
+    ctx.shaderSource(shader, source);
+    ctx.compileShader(shader);
+    const success = ctx.getShaderParameter(shader, ctx.COMPILE_STATUS);
+    if (success) {
+        return shader;
+    }
+
+    console.log(ctx.getShaderInfoLog(shader));
+    ctx.deleteShader(shader);
+}
+
+function create_program(ctx: WebGL2RenderingContext, vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram|undefined {
+    const program = ctx.createProgram() as WebGLProgram;
+    ctx.attachShader(program, vertexShader);
+    ctx.attachShader(program, fragmentShader);
+    ctx.linkProgram(program);
+    const success = ctx.getProgramParameter(program, ctx.LINK_STATUS);
+    if (success) {
+        return program;
+    }
+
+    console.log(ctx.getProgramInfoLog(program));
+    ctx.deleteProgram(program);
+}
+
+function create_texture_rgba(ctx: WebGL2RenderingContext, cpu_texture: Texture): WebGLTexture {
+    const bitmap = cpu_texture.bitmap;
+    const texture = ctx.createTexture();
+    ctx.bindTexture(ctx.TEXTURE_2D, texture);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.LINEAR);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.LINEAR);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S, ctx.CLAMP_TO_EDGE);
+    ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T, ctx.CLAMP_TO_EDGE);
+    ctx.texStorage2D(ctx.TEXTURE_2D, 1, ctx.RGBA8, bitmap.width, bitmap.height);
+    ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, bitmap.width, bitmap.height, ctx.RGBA, ctx.UNSIGNED_BYTE, bitmap);
+    return texture;
+}
+
+function realloc_buffer(
+    ctx: WebGL2RenderingContext,
+    buffer: WebGLBuffer,
+    target: GLenum,
+    old_capacity: number,
+    new_capacity: number,
+    copy_data: boolean
+): WebGLBuffer {
+    const new_buffer = ctx.createBuffer();
+    ctx.bindBuffer(target, new_buffer);
+    ctx.bufferData(target, new_capacity, ctx.DYNAMIC_DRAW);
+
+    if (copy_data) {
+        ctx.bindBuffer(ctx.COPY_READ_BUFFER, buffer);
+        ctx.bindBuffer(ctx.COPY_WRITE_BUFFER, new_buffer);
+        ctx.copyBufferSubData(ctx.COPY_READ_BUFFER, ctx.COPY_WRITE_BUFFER, 0, 0, old_capacity);
+        ctx.bindBuffer(ctx.COPY_READ_BUFFER, null);
+        ctx.bindBuffer(ctx.COPY_WRITE_BUFFER, null);
+    }
+
+    ctx.deleteBuffer(buffer);
+
+    return new_buffer;
 }

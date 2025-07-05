@@ -3,6 +3,33 @@ import { EngineAssets } from "./assets";
 import { Renderer } from "./renderer";
 import { EngineWebSocket, WebSocketMessage } from "./websocket";
 import { set_last_error } from "./error";
+import { file_extension } from "./helpers";
+
+
+const UPDATE_MOUSE_POSITION = 0b001;
+const UPDATE_MOUSE_BUTTONS  = 0b010;
+const UPDATE_KEYS           = 0b100;
+
+// Matches `MouseButton` in `game\src\inputs.rs`
+const MOUSE_BUTTON_LEFT = 0;
+const MOUSE_BUTTON_RIGHT = 1;
+const MOUSE_BUTTON_CENTER = 2;
+
+class GameInput {
+    updates: number = 0;
+    mouse_position: number[] = [0.0, 0.0];
+
+    // true: button was pressed, false: button was released, null: button state wasn't changed
+    left_mouse_button: boolean|null = null;    
+    right_mouse_button: boolean|null = null;
+    center_mouse_button: boolean|null = null;
+
+    tap_timeout: number = 0;
+    touch_scrolling: boolean = false;
+    touchmove: boolean = false;
+
+    keys: Map<string, boolean> = new Map();
+}
 
 class Engine {
     ws: EngineWebSocket = new EngineWebSocket();
@@ -10,7 +37,9 @@ class Engine {
     game: GameInterface = new GameInterface();
     assets: EngineAssets = new EngineAssets();
     renderer: Renderer = new Renderer();
+    input: GameInput = new GameInput();
 
+    refresh_client: boolean = false;
     reload_client: boolean = false;
     reload: boolean = false;
     exit: boolean = false;
@@ -21,11 +50,170 @@ class Engine {
 //
 
 function init_handlers(engine: Engine) {
+    const canvas = engine.renderer.canvas.element;
+    const input_state = engine.input;
+
+    function on_mouse_move(event: MouseEvent) {
+        input_state.mouse_position[0] = event.clientX - canvas.offsetLeft;
+        input_state.mouse_position[1] = event.clientY - canvas.offsetTop;
+        input_state.updates |= UPDATE_MOUSE_POSITION;
+    }
+
+    function on_mouse_down(event: MouseEvent) {
+        input_state.updates |= UPDATE_MOUSE_BUTTONS;
+
+        if (event.button === 0) { input_state.left_mouse_button = true; }
+        else if (event.button === 1) { input_state.center_mouse_button = true; }
+        else if (event.button === 2) { input_state.right_mouse_button = true; }
+        
+        event.preventDefault();
+    }
+
+    function on_mouse_up(event: MouseEvent) {
+        input_state.updates |= UPDATE_MOUSE_BUTTONS;
+
+        if (event.button === 0) { input_state.left_mouse_button = false; }
+        else if (event.button === 1) { input_state.center_mouse_button = false; }
+        else if (event.button === 2) { input_state.right_mouse_button = false; }
+
+        event.preventDefault();
+    }
+
+    function startScroll(clientX: number, clientY: number): boolean {
+        clientX = clientX - canvas.offsetLeft;
+        clientY = clientY - canvas.offsetTop;
+
+        // Hardcoded gui height in the wasm client
+        const gui_height = 200;
+        if (canvas.height - clientY < gui_height) {
+            return false;
+        }
+
+        const deadzone = 60;
+        let scroll = false;
+        if (clientX < deadzone) {
+            input_state.keys.set("ArrowLeft", true);
+            scroll = true;
+        } else if (canvas.width - clientX < deadzone) {
+            input_state.keys.set("ArrowRight", true);
+            scroll = true;
+        } 
+
+        if (clientY < deadzone) {
+            input_state.keys.set("ArrowUp", true);
+            scroll = true;
+        } else if (canvas.height - clientY < gui_height+deadzone) {
+            input_state.keys.set("ArrowDown", true);
+            scroll = true;
+        }
+
+        if (scroll) {
+            input_state.updates |= UPDATE_KEYS;
+        }
+
+        input_state.touch_scrolling = scroll;
+        
+        return scroll;
+    }
+
+    canvas.addEventListener("mousemove", on_mouse_move)
+    canvas.addEventListener("mousedown", on_mouse_down)
+    canvas.addEventListener("mouseup", on_mouse_up)
+
+    canvas.addEventListener("touchstart", (event) => {
+        const touch = event.touches;
+        if (touch.length == 1) {
+            let {clientX, clientY} = touch[0];
+
+            // Border touches for scrolling
+            if (startScroll(clientX, clientY)) {
+                return;
+            }
+
+            if (input_state.tap_timeout !== 0) {
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
+                
+                const event = new MouseEvent("mousedown", { button: 2 });
+                on_mouse_down(event);
+                setTimeout(() => on_mouse_up(event), 50);
+                
+                clearTimeout(input_state.tap_timeout);
+                input_state.tap_timeout = 0;
+                return
+            }
+
+            // Single tap
+            input_state.tap_timeout = setTimeout(() => {
+                on_mouse_move(new MouseEvent("mousemove", { clientX, clientY }));
+                
+                const event = new MouseEvent("mousedown", { button: 0 });
+                on_mouse_down(event);
+                setTimeout(() => on_mouse_up(event), 50);
+
+                clearTimeout(input_state.tap_timeout);
+                input_state.tap_timeout = 0;
+            }, 300);
+        }
+    });
+    canvas.addEventListener("touchend", (event) => {
+        // Border touches for scrolling
+        if (input_state.touch_scrolling && event.touches.length == 0) {
+            input_state.keys.set("ArrowLeft", false);
+            input_state.keys.set("ArrowRight", false);
+            input_state.keys.set("ArrowUp", false);
+            input_state.keys.set("ArrowDown", false);
+
+            input_state.updates |= UPDATE_KEYS;
+            return;
+        }
+
+        if (input_state.touchmove) {
+            // MAAAANN I hate mobile devices
+            const event1 = new MouseEvent("mousedown", { button: 0 });
+            on_mouse_down(event1);
+            setTimeout(() => on_mouse_up(event1), 50);
+
+            const event2 = new MouseEvent("mousedown", { button: 2 });
+            on_mouse_down(event2);
+            setTimeout(() => on_mouse_up(event2), 50);
+
+            input_state.touchmove = false;
+        }
+        
+        event.preventDefault();
+    });
+    canvas.addEventListener("touchmove", (event) => {
+        const touch = event.touches;
+        
+        clearTimeout(input_state.tap_timeout);
+        input_state.tap_timeout = 0;
+
+        if (touch.length == 1) {
+            on_mouse_move(new MouseEvent("mousemove", { clientX: touch[0].clientX, clientY: touch[0].clientY }));
+            input_state.touchmove = true;
+        }
+    });
+
+    canvas.addEventListener("contextmenu", (event) => { event.preventDefault(); });
+
+    window.addEventListener("keydown", (event) => {
+        input_state.keys.set(event.code, true);
+        input_state.updates |= UPDATE_KEYS;
+    });
+
+    window.addEventListener("keyup", (event) => {
+        // console.log(event.code);
+        input_state.keys.set(event.code, false);
+        input_state.updates |= UPDATE_KEYS;
+    });
+
+    document.getElementById("resetDemo")?.addEventListener("click", (event) => {
+        engine.refresh_client = true;
+    });
 }
 
 function start_client(engine: Engine): boolean {
-    const params: GameInterfaceStartupParams = { 
-        max_texture_size: engine.renderer.max_texture_size(),
+    const params: GameInterfaceStartupParams = {
         screen_width: engine.renderer.canvas.width,
         screen_height: engine.renderer.canvas.height,
     };
@@ -68,7 +256,104 @@ async function init(): Promise<Engine | null> {
 // Updates
 //
 
+function on_file_changed(engine: Engine, message: WebSocketMessage) {
+    // Reloading is async so we don't execute it right away in the game loop.
+    // See the `reload` function in this file
+    const ext = file_extension(message.data);
+    switch (ext) {
+        case "wasm": {
+            engine.reload_client = true;
+            engine.reload = true;
+            break;
+        }
+    }
+}
+
+/// Handle the updates received from the development server
+function websocket_messages(engine: Engine) {
+    const ws = engine.ws;
+    if (!ws.open) {
+        // We're using a static client with no dev server
+        return;
+    }
+
+    for (let i=0; i<ws.messages_count; i++) {
+        let message = ws.messages[i];
+        switch (message.name) {
+            case "FILE_CHANGED": {
+                on_file_changed(engine, message);
+                break;
+            }
+            default: {
+                console.log("Unknown message:", message);
+            }
+        }
+    }
+
+    ws.messages_count = 0;
+}
+
+/// Check if the canvas size changed since the last call, and if so run the on resize logic
+function handle_resize(engine: Engine) {
+    if (engine.renderer.handle_resize()) {
+        const width = engine.renderer.canvas.width;
+        const height = engine.renderer.canvas.height;
+        engine.game.resize(width, height)
+    }
+}
+
+function game_input_updates(engine: Engine) {
+    const inputs = engine.input;
+    const game = engine.game.instance;
+
+    if ((inputs.updates & UPDATE_MOUSE_POSITION) > 0) {
+        game.update_mouse_position(inputs.mouse_position[0], inputs.mouse_position[1]);
+    }
+
+    if ((inputs.updates & UPDATE_MOUSE_BUTTONS) > 0) {
+        if (inputs.left_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_LEFT, inputs.left_mouse_button);
+        }
+
+        if (inputs.right_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_RIGHT, inputs.right_mouse_button);
+        }
+
+        if (inputs.center_mouse_button !== null) {
+            game.update_mouse_buttons(MOUSE_BUTTON_CENTER, inputs.center_mouse_button);
+        }
+
+        inputs.left_mouse_button = null;
+        inputs.right_mouse_button = null;
+        inputs.center_mouse_button = null;
+    }
+
+    if ((inputs.updates & UPDATE_KEYS) > 0) {
+        for (let entry of inputs.keys.entries()) {
+            game.update_keys(entry[0], entry[1]);
+        }
+    }
+
+    inputs.keys.clear();
+    inputs.updates = 0;
+}
+
+/// Execute the game logic of the client for the current frame
+function game_updates(engine: Engine, time: DOMHighResTimeStamp) {
+    game_input_updates(engine)
+    engine.game.instance.update(time)
+}
+
+/// Reads the rendering updates generated by the game client
+function renderer_updates(engine: Engine) {
+    engine.renderer.update(engine.game);
+}
+
 function update(engine: Engine, time: DOMHighResTimeStamp) {
+    websocket_messages(engine);
+    handle_resize(engine);
+    game_updates(engine, time);
+    renderer_updates(engine);
 }
 
 //

@@ -81,8 +81,6 @@ function init_handlers(engine: Engine) {
     function startScroll(clientX: number, clientY: number): boolean {
         clientX = clientX - canvas.offsetLeft;
         clientY = clientY - canvas.offsetTop;
-
-        console.log(clientX, clientY);
         
         // Hardcoded gui height in the wasm client
         const gui_height = 200;

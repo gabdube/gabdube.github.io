@@ -21,7 +21,7 @@ impl StoreWriter {
 
     pub fn new() -> Self {
         StoreWriter {
-            data: vec![0u8; 1024*1024],    // 1mb should be more than enough
+            data: vec![0u8; 1024*256],    // 256kb should be more than enough
             data_offset: 0
         }
     }

@@ -18,6 +18,62 @@ function getStringFromWasm0(ptr, len) {
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
+let WASM_VECTOR_LEN = 0;
+
+const cachedTextEncoder = (typeof TextEncoder !== 'undefined' ? new TextEncoder('utf-8') : { encode: () => { throw Error('TextEncoder not available') } } );
+
+const encodeString = (typeof cachedTextEncoder.encodeInto === 'function'
+    ? function (arg, view) {
+    return cachedTextEncoder.encodeInto(arg, view);
+}
+    : function (arg, view) {
+    const buf = cachedTextEncoder.encode(arg);
+    view.set(buf);
+    return {
+        read: arg.length,
+        written: buf.length
+    };
+});
+
+function passStringToWasm0(arg, malloc, realloc) {
+
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = encodeString(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
+
 function _assertClass(instance, klass) {
     if (!(instance instanceof klass)) {
         throw new Error(`expected instance of ${klass.name}`);
@@ -42,8 +98,6 @@ export function save(client) {
     return v2;
 }
 
-let WASM_VECTOR_LEN = 0;
-
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;
     getUint8ArrayMemory0().set(arg, ptr / 1);
@@ -60,6 +114,22 @@ export function load(bytes) {
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.load(ptr0, len0);
     return GameClient.__wrap(ret);
+}
+
+/**
+ * @returns {string}
+ */
+export function protocol() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.protocol();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
 }
 
 const GameClientFinalization = (typeof FinalizationRegistry === 'undefined')
@@ -97,6 +167,49 @@ export class GameClient {
         const ret = wasm.gameclient_initialize(ptr0);
         return ret === 0 ? undefined : GameClient.__wrap(ret);
     }
+    /**
+     * @param {number} time
+     */
+    update(time) {
+        wasm.gameclient_update(this.__wbg_ptr, time);
+    }
+    /**
+     * @returns {number}
+     */
+    updates_ptr() {
+        const ret = wasm.gameclient_updates_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} width
+     * @param {number} height
+     */
+    resize(width, height) {
+        wasm.gameclient_resize(this.__wbg_ptr, width, height);
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     */
+    update_mouse_position(x, y) {
+        wasm.gameclient_update_mouse_position(this.__wbg_ptr, x, y);
+    }
+    /**
+     * @param {number} button
+     * @param {boolean} pressed
+     */
+    update_mouse_buttons(button, pressed) {
+        wasm.gameclient_update_mouse_buttons(this.__wbg_ptr, button, pressed);
+    }
+    /**
+     * @param {string} key_name
+     * @param {boolean} pressed
+     */
+    update_keys(key_name, pressed) {
+        const ptr0 = passStringToWasm0(key_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.gameclient_update_keys(this.__wbg_ptr, ptr0, len0, pressed);
+    }
 }
 
 const GameClientInitFinalization = (typeof FinalizationRegistry === 'undefined')
@@ -132,10 +245,12 @@ export class GameClientInit {
         return GameClientInit.__wrap(ret);
     }
     /**
-     * @param {number} value
+     * @param {string} text
      */
-    max_texture_size(value) {
-        wasm.gameclientinit_max_texture_size(this.__wbg_ptr, value);
+    set_assets_bundle(text) {
+        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.gameclientinit_set_assets_bundle(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * @param {number} width

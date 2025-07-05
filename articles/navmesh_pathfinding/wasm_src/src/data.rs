@@ -308,6 +308,7 @@ impl StoreLoad for CommonParams {
 
         writer.write(&self.mouse_position_old);
         writer.write(&self.mouse_position);
+        writer.write(&self.mouse_position_gui);
         writer.write(&self.view_offset);
         writer.write(&self.view_size);
         writer.write(&self.zoom);
@@ -323,6 +324,7 @@ impl StoreLoad for CommonParams {
         
         params.mouse_position_old = reader.try_read()?;
         params.mouse_position = reader.try_read()?;
+        params.mouse_position_gui = reader.try_read()?;
         params.view_offset = reader.try_read()?;
         params.view_size = reader.try_read()?;
         params.zoom = reader.try_read()?;
