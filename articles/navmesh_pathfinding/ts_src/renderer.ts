@@ -5,7 +5,7 @@ import { EngineAssets, Texture } from "./assets";
 const BASE_SPRITES_CAPACITY = 1024 * 2;
 const BASE_SPRITES_HIGHLIGHT_CAPACITY = 512;
 const BASE_TERRAIN_CAPACITY = 1024 * 10;
-const BASE_DEBUG_CAPACITY = 1024;
+const BASE_DEBUG_CAPACITY = 1024 * 10;
 const BASE_GUI_CAPACITY = 1024 * 5;
 
 class RendererCanvas {
@@ -266,7 +266,7 @@ export class Renderer {
     private build_sprite_vao(vao: WebGLVertexArrayObject, instance_base: number): WebGLVertexArrayObject {
         const GPU_SPRITE_SIZE = 32;
         const ctx = this.ctx;
-        const [position, instance_position, instance_texcoord, instance_data] = this.shaders.sprites_attributes;
+        const [position, instance_position, instance_texcoord] = this.shaders.sprites_attributes;
         const attributes_offset = instance_base * GPU_SPRITE_SIZE;
 
         ctx.bindVertexArray(vao);
@@ -750,11 +750,15 @@ export class Renderer {
     }
 
     render() {
+        if (!this.visible) {
+            return;
+        }
+
         const ctx = this.ctx;
         const canvas = this.canvas;
 
         ctx.bindFramebuffer(ctx.DRAW_FRAMEBUFFER, this.framebuffer);
-        ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 1.0]);
+        ctx.clearBufferfv(ctx.COLOR, 0, [0.0, 0.0, 0.0, 0.0]);
 
         this.render_terrain();
         this.render_sprites();
@@ -801,7 +805,7 @@ export class Renderer {
             depth: false,
             stencil: false,
             antialias: false,
-            premultipliedAlpha: false,
+            premultipliedAlpha: true,
             preserveDrawingBuffer: false,
         });
 

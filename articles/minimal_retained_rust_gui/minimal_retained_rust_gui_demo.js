@@ -253,6 +253,17 @@ export class GameClientInit {
         wasm.gameclientinit_set_assets_bundle(this.__wbg_ptr, ptr0, len0);
     }
     /**
+     * @param {string} name
+     * @param {string} value
+     */
+    upload_text_asset(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(value, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.gameclientinit_upload_text_asset(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
      * @param {number} width
      * @param {number} height
      */

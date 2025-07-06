@@ -1,8 +1,7 @@
 /*!
 Usage: cargo run --release -p tools -- pack_sprites --input-csv sprites.csv --output-image test.png --output-csv test.csv --max-width 512
 
-cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 64
-cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_terrain.csv" --output-image "articles/minimal_retained_rust_gui/assets/terrain.png" --output-csv "articles/minimal_retained_rust_gui/assets/terrain.csv" --max-width 64
+cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 700 --premultiply-alpha
 */
 
 use std::collections::HashMap;
@@ -12,10 +11,11 @@ use crate::shared;
 const PIXEL_SIZE: usize = 4;
 
 struct PackSpriteArgs {
-    pub output_image_dst: String,
-    pub output_csv_dst: String,
-    pub input_csv: String,
-    pub max_width: u32,
+    output_image_dst: String,
+    output_csv_dst: String,
+    input_csv: String,
+    max_width: u32,
+    premultiply_alpha: bool,
 }
 
 #[derive(Debug)]
@@ -27,13 +27,14 @@ struct InputSprite {
 
 #[derive(Default)]
 struct PackSpriteState {
-    pub input_sprites: Vec<InputSprite>,
-    pub max_width: u32,
+    input_sprites: Vec<InputSprite>,
+    max_width: u32,
+    premultiply_alpha: bool,
 
-    pub output_csv_dst: String,
-    pub output_image_dst: String,
-    pub output_image_pixels: Vec<u8>,
-    pub output_image_size: shared::SizeU32
+    output_csv_dst: String,
+    output_image_dst: String,
+    output_image_pixels: Vec<u8>,
+    output_image_size: shared::SizeU32
 }
 
 fn args() -> Option<PackSpriteArgs> {
@@ -73,11 +74,14 @@ fn args() -> Option<PackSpriteArgs> {
         .and_then(|value| value.parse::<u32>().ok() )
         .unwrap_or(512);
 
+    let premultiply_alpha: bool = crate::shared::has_arg("--premultiply-alpha");
+
     Some(PackSpriteArgs {
         output_image_dst,
         output_csv_dst,
         input_csv,
         max_width,
+        premultiply_alpha,
     })
 }
 
@@ -98,6 +102,7 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
         max_width: args.max_width,
         output_image_dst: args.output_image_dst,
         output_csv_dst: args.output_csv_dst,
+        premultiply_alpha: args.premultiply_alpha,
         ..Default::default()
     };
 
@@ -120,6 +125,13 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
                     return;
                 }
             },
+            "animation" => match LoadSpriteParams::from_animation_args(&args[3..]) {
+                Some(value) => value,
+                None => {
+                    errors.push(format!("{line_number}: Failed to parse crop arguments. Expected [frame_width, frame_height], got {:?}", &args[3..]));
+                    return;
+                }
+            }
             other => {
                 errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be one of [\"auto\", \"crop\"]"));
                 return;
@@ -189,7 +201,7 @@ fn copy_sprites_to_output_image(state: &mut PackSpriteState) {
     fn copy_sprite(
         dst: &mut [u8], dst_x: usize, dst_y: usize, dst_stride: usize,
         src: &[u8], src_stride: usize, height: usize
-    ){
+    ) {
         for line in 0..height {
             let src_offset = line * src_stride;
             let dst_offset = ((line+dst_y) * dst_stride) + (dst_x * PIXEL_SIZE);
@@ -203,6 +215,33 @@ fn copy_sprites_to_output_image(state: &mut PackSpriteState) {
         }
     }
 
+    fn copy_sprite_premultiply_alpha(
+        dst: &mut [u8], dst_x: usize, dst_y: usize, dst_stride: usize,
+        src: &[u8], src_stride: usize, height: usize
+    ) {
+        let pixel_count = src_stride / PIXEL_SIZE;
+
+        for line in 0..height {
+            let src_offset = line * src_stride;
+            let dst_offset = ((line+dst_y) * dst_stride) + (dst_x * PIXEL_SIZE);
+            
+            let mut pixel_offset = 0;
+            for _ in 0..pixel_count {
+                let [mut r, mut g, mut b, a] = unsafe { std::ptr::read(src.as_ptr().add(src_offset + pixel_offset) as *const [u8; 4]) };
+                let a_f64 = a as f64 / 255.0;
+                r = ((r as f64) * a_f64) as u8;
+                g = ((g as f64) * a_f64) as u8;
+                b = ((b as f64) * a_f64) as u8;
+
+                unsafe {
+                    std::ptr::write(dst.as_mut_ptr().add(dst_offset + pixel_offset) as *mut [u8; 4], [r, g, b, a]);
+                }
+                
+                pixel_offset += PIXEL_SIZE;
+            }
+        }
+    }
+
     let dst_stride = state.output_image_size.width as usize * PIXEL_SIZE;
     let dst_bytes = &mut state.output_image_pixels;
 
@@ -212,10 +251,18 @@ fn copy_sprites_to_output_image(state: &mut PackSpriteState) {
         let dst_y = dst_rect.top as usize;
         let height = sprite.data.size.height as usize;
         let src_stride = sprite.data.line_size();
-        copy_sprite(
-            dst_bytes, dst_x, dst_y, dst_stride,
-            &sprite.data.pixels, src_stride, height,
-        );
+
+        if state.premultiply_alpha {
+            copy_sprite_premultiply_alpha(
+                dst_bytes, dst_x, dst_y, dst_stride,
+                &sprite.data.pixels, src_stride, height,
+            );
+        } else {
+            copy_sprite(
+                dst_bytes, dst_x, dst_y, dst_stride,
+                &sprite.data.pixels, src_stride, height,
+            );
+        }
     }
 }
 
@@ -224,8 +271,9 @@ fn pack_sprites(state: &mut PackSpriteState) -> bool {
         return false;
     }
 
+    const PACKING_PADDING: u32 = 2;
     let packed_sprites = generate_pack_sprites(state);
-    let packed = SpritePackingHelper::new(state.max_width, packed_sprites);
+    let packed = SpritePackingHelper::new(state.max_width, PACKING_PADDING, packed_sprites);
     
     allocate_output_image(state, &packed);
     copy_pack_sprites_to_state(state, &packed);
@@ -257,7 +305,7 @@ fn write_csv(state: &PackSpriteState) {
         .and_then(|mut file| file.write(csv_out.as_bytes()) );
 
     if let Err(e) = write_result {
-         eprintln!("Failed to write output csv to {:?}: {:?}", state.output_csv_dst, e);
+        eprintln!("Failed to write output csv to {:?}: {:?}", state.output_csv_dst, e);
     }
 }
 

@@ -43,7 +43,7 @@ impl SubAssign for PositionF32 {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, PartialOrd, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct SizeF32 {
     pub width: f32,

@@ -155,6 +155,7 @@ function init_handlers(engine: Engine) {
             }, 300);
         }
     });
+
     canvas.addEventListener("touchend", (event) => {
         // Border touches for scrolling
         if (input_state.touch_scrolling && event.touches.length == 0) {
@@ -182,6 +183,7 @@ function init_handlers(engine: Engine) {
         
         event.preventDefault();
     });
+
     canvas.addEventListener("touchmove", (event) => {
         const touch = event.touches;
         

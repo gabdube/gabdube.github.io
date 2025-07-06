@@ -4,7 +4,8 @@ pub const PIXEL_SIZE: usize = 4; // Size of rgba u8
 
 pub enum LoadSpriteParams {
     Auto,
-    Crop(RectU32)
+    Crop(RectU32),
+    Animation { frame_size: SizeU32 }
 }
 
 impl LoadSpriteParams {
@@ -16,6 +17,15 @@ impl LoadSpriteParams {
         let bottom = args.get(3).and_then(|&arg| arg.parse::<u32>().ok() );
         match [left, top, right, bottom] {
             [Some(left), Some(top), Some(right), Some(bottom)] => Some(Self::Crop(RectU32 { left, top, right, bottom })),
+            _ => None
+        }
+    }
+
+    pub fn from_animation_args(args: &[&str]) -> Option<LoadSpriteParams> {
+        let width = args.get(0).and_then(|&arg| arg.parse::<u32>().ok() );
+        let height = args.get(1).and_then(|&arg| arg.parse::<u32>().ok() );
+        match [width, height] {
+            [Some(width), Some(height)] => Some(Self::Animation { frame_size: SizeU32 { width, height } }),
             _ => None
         }
     }
@@ -47,6 +57,20 @@ impl SpriteData {
             LoadSpriteParams::Crop(src_rect) => {
                 optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels);
                 sprite.frame_size = sprite.size;
+            },
+            LoadSpriteParams::Animation { frame_size } => {
+                use crate::helpers::optimize_animation;
+                let mut params = optimize_animation::OptimizeAnimationParams {
+                    src_line_size: png.info.line_size,
+                    src_rect: rect_u32(0, 0, png.info.width, png.info.height),
+                    src_frame_size: frame_size,
+                    src_bytes: &png.data,
+                    optimized_size: &mut sprite.size,
+                    optimized_frame_size: &mut sprite.frame_size,
+                    dst_bytes: &mut sprite.pixels
+                };
+
+                optimize_animation::optimize_animation(&mut params);
             }
         }
 
@@ -85,8 +109,8 @@ fn optimize_sprite_rect(
 ) {
     let mut rect = rect_i32(i32::MAX, i32::MAX, i32::MIN, i32::MIN);
 
-    for y in src_rect.top..=src_rect.bottom {
-        for x in src_rect.left..=src_rect.right {
+    for y in src_rect.top..src_rect.bottom {
+        for x in src_rect.left..src_rect.right {
             let [x2, y2] = [x as usize, y as usize];
             let pixel_offset = (y2 * src_line_size) + (x2 * PIXEL_SIZE) + 3;
             let a: u8 = src_bytes[pixel_offset];

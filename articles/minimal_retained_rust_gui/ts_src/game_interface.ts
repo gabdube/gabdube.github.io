@@ -79,6 +79,9 @@ export class GameInterface {
 
         // Assets
         initial_data.set_assets_bundle(assets.bundle);
+        for (const [csv_name, csv_value] of assets.csv.entries()) {
+            initial_data.upload_text_asset(csv_name, csv_value);
+        }
 
         this.instance = mod.GameClient.initialize(initial_data);
         if (!this.instance) {

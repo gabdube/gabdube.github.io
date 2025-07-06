@@ -94,9 +94,16 @@ pub fn compile() -> String {
         &mut source,
         "OutputMessageType",
         &[
+            ("UpdateSprites", OutputMessageType::UpdateSprites),
+            ("DrawSprites", OutputMessageType::DrawSprites),
+            ("UpdateHighlightSprites", OutputMessageType::UpdateHighlightSprites),
+            ("HighlightSprites", OutputMessageType::HighlightSprites),
             ("UpdateTerrain", OutputMessageType::UpdateTerrain),
+            ("DrawDebug", OutputMessageType::DrawDebug),
+            ("ResetGui", OutputMessageType::ResetGui),
             ("UpdateViewOffset", OutputMessageType::UpdateViewOffset),
             ("UpdateViewSize", OutputMessageType::UpdateViewSize),
+            ("DrawInsertSprite", OutputMessageType::DrawInsertSprite),
         ]
     );
 
@@ -114,12 +121,56 @@ pub fn compile() -> String {
 
     generate_struct(
         &mut source, 
+        "UpdateSpritesParams", 
+        size_of::<UpdateSpritesParams>(),
+        &[
+            ("offset_bytes", pointer_type, offset_of!(UpdateSpritesParams, offset_bytes)),
+            ("size_bytes", pointer_type, offset_of!(UpdateSpritesParams, size_bytes)),
+        ],
+    );
+
+    generate_struct(
+        &mut source, 
+        "DrawSpritesParams", 
+        size_of::<DrawSpritesParams>(),
+        &[
+            ("instance_base", "getUint32", offset_of!(DrawSpritesParams, instance_base)),
+            ("instance_count", "getUint32", offset_of!(DrawSpritesParams, instance_count)),
+            ("texture_id", "getUint32", offset_of!(DrawSpritesParams, texture_id)),
+        ],
+    );
+
+    generate_struct(
+        &mut source, 
         "UpdateTerrainParams", 
         size_of::<UpdateTerrainParams>(),
         &[
             ("offset_bytes", pointer_type, offset_of!(UpdateTerrainParams, offset_bytes)),
             ("size_bytes", pointer_type, offset_of!(UpdateTerrainParams, size_bytes)),
             ("cell_count", pointer_type, offset_of!(UpdateTerrainParams, cell_count)),
+        ],
+    );
+
+    generate_struct(
+        &mut source, 
+        "DrawDebugParams", 
+        size_of::<DrawDebugParams>(),
+        &[
+            ("index_offset_bytes", pointer_type, offset_of!(DrawDebugParams, index_offset_bytes)),
+            ("index_size_bytes", pointer_type, offset_of!(DrawDebugParams, index_size_bytes)),
+            ("vertex_offset_bytes", pointer_type, offset_of!(DrawDebugParams, vertex_offset_bytes)),
+            ("vertex_size_bytes", pointer_type, offset_of!(DrawDebugParams, vertex_size_bytes)),
+            ("count", pointer_type, offset_of!(DrawDebugParams, count)),
+        ],
+    );
+
+    generate_struct(
+        &mut source, 
+        "DrawInsertSpriteParams", 
+        size_of::<DrawInsertSpriteParams>(),
+        &[
+            ("vertex_offset_bytes", pointer_type, offset_of!(DrawInsertSpriteParams, vertex_offset_bytes)),
+            ("vertex_size_bytes", pointer_type, offset_of!(DrawInsertSpriteParams, vertex_size_bytes)),
         ],
     );
 
@@ -132,7 +183,13 @@ pub fn compile() -> String {
         ],
         &[
             ("name", "return OutputMessageType[this.ty()] || this.ty();"),
+            ("update_sprites", "return new UpdateSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("update_highlight_sprites", "return new UpdateSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_highlight_sprites", "return new DrawSpritesParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_insert_sprite", "return new DrawInsertSpriteParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("update_terrain", "return new UpdateTerrainParams(this.view.buffer, this.view.byteOffset + 4);"),
+            ("draw_debug", "return new DrawDebugParams(this.view.buffer, this.view.byteOffset + 4);"),
             ("update_view_offset", "return [this.view.getFloat32(4, true), this.view.getFloat32(8, true)];"),
             ("update_view_size", "return [this.view.getFloat32(4, true), this.view.getFloat32(8, true)];"),
         ]

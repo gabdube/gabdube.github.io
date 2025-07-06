@@ -6,6 +6,13 @@ pub struct PngFile {
 }
 
 #[derive(Debug, Default, Copy, Clone)]
+pub struct OffsetU32 {
+    pub x: u32,
+    pub y: u32
+}
+
+
+#[derive(Debug, Default, Copy, Clone)]
 pub struct SizeU32 {
     pub width: u32,
     pub height: u32
@@ -58,6 +65,10 @@ impl RectI32 {
 pub fn get_arg(name: &str) -> Option<String> {
     let position = ::std::env::args().position(|arg| arg.as_str() == name);
     position.and_then(|p| ::std::env::args().skip(p+1).next() )
+}
+
+pub fn has_arg(name: &str) -> bool {
+    ::std::env::args().any(|arg| arg.as_str() == name)
 }
 
 pub fn split_csv<const MAX_ARGS: usize, CB: FnMut(&[&str])>(csv: &str, mut callback: CB) {

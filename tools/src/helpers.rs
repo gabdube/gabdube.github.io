@@ -1,3 +1,5 @@
+mod optimize_animation;
+
 mod sprites;
 pub use sprites::*;
 

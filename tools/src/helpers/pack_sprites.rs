@@ -9,7 +9,8 @@ pub struct PackSprite {
 struct PackStateRef<'a> {
     sprites: &'a mut [PackSprite],
     processed: &'a mut [bool],
-    area: RectU32
+    area: RectU32,
+    padding: u32,
 }
 
 impl<'a> PackStateRef<'a> {
@@ -47,10 +48,11 @@ pub struct SpritePackingHelper {
     sprites: Vec<PackSprite>,
     processed: Vec<bool>,
     size: SizeU32,
+    padding: u32,
 }
 
 impl SpritePackingHelper {
-    pub fn new(max_width: u32, mut sprites: Vec<PackSprite>) -> Self {
+    pub fn new(max_width: u32, padding: u32, mut sprites: Vec<PackSprite>) -> Self {
         use std::cmp::Ordering;
 
         fn sort_sprites(sprite1: &PackSprite, sprite2: &PackSprite) -> Ordering {
@@ -69,7 +71,8 @@ impl SpritePackingHelper {
         let mut pack_state = SpritePackingHelper {
             sprites,
             processed: vec![false; sprites_count],
-            size: SizeU32::default()
+            size: SizeU32::default(),
+            padding
         };
 
         pack_state.compute(max_width);
@@ -97,14 +100,15 @@ impl SpritePackingHelper {
             let pack_state = PackStateRef {
                 sprites: &mut self.sprites,
                 processed: &mut self.processed,
-                area: rect_u32(0, top, max_width, top+size.height)
+                area: rect_u32(0, top, max_width, top+size.height),
+                padding: self.padding,
             };
 
             if !Self::pack_row(pack_state) {
                 break;
             }
     
-            top += size.height;
+            top += size.height + self.padding;
         }
 
         self.size.width = max_width;
@@ -127,14 +131,15 @@ impl SpritePackingHelper {
                         top: state.area.top + size.height,
                         right: state.area.left + size.width,
                         bottom: state.area.bottom,
-                    }
+                    },
+                    padding: state.padding,
                 };
                 if !Self::pack_row(state) {
                     return false;
                 }
             }
     
-            state.area.left += size.width;
+            state.area.left += size.width + state.padding;
         }
     }
 }

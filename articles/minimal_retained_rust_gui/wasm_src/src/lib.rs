@@ -10,6 +10,7 @@ mod state;
 mod output;
 mod store;
 
+use fnv::FnvHashMap;
 use wasm_bindgen::prelude::*;
 use error::Error;
 use store::StoreLoad;
@@ -18,6 +19,7 @@ use store::StoreLoad;
 pub struct GameClientInit {
     pub(crate) assets_bundle: String,
     pub(crate) view_size: shared::SizeF32,
+    pub(crate) text_assets: FnvHashMap<String, String>,
 }
 
 #[wasm_bindgen]
@@ -27,6 +29,7 @@ impl GameClientInit {
         GameClientInit {
             assets_bundle: String::new(),
             view_size: shared::size(0.0, 0.0),
+            text_assets: FnvHashMap::default()
         }
     }
 
@@ -34,11 +37,15 @@ impl GameClientInit {
         self.assets_bundle = text;
     }
 
+    pub fn upload_text_asset(&mut self, name: String, value: String) {
+        self.text_assets.insert(name, value);
+    }
+
     pub fn view_size(&mut self, width: f32, height: f32) {
         self.view_size.width = width;
         self.view_size.height = height;
     }
-
+    
 }
 
 #[wasm_bindgen]
@@ -59,11 +66,18 @@ impl GameClient {
 
         client.world_data.data.common.view_size = init.view_size;
 
+        if let Err(e) = client.world_data.data.assets.init(&init) {
+            log_err!(e);
+            return None;
+        }
+
         Some(client)
     }
 
     pub fn update(&mut self, time: f64) {
         use state::GameStateValue::*;
+
+        self.world_data.prepare_update(time);
 
         match self.state.value {
             Uninitialized => {
@@ -105,6 +119,7 @@ impl GameClient {
 
 impl GameClient {
     pub fn on_reload(&mut self) {
+        state::init(self);
     }
 
     pub fn as_bytes(&mut self) -> Box<[u8]> {

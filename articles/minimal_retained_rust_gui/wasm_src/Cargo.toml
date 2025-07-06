@@ -10,10 +10,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 
-# Std hashmap replacement
-fnv = "1.0.7"
-
 # WASM tooling
 wasm-bindgen = "0.2.92"
 zerocopy = "0.8"
 zerocopy-derive = "0.8"
+
+# ECS
+hecs = "0.10.5"
+
+# Std hashmap replacement
+fnv = "1.0.7"
+

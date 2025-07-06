@@ -2,8 +2,13 @@ import { fetch_text, fetch_blob, fetch_arraybuffer } from "./helpers";
 import { set_last_error } from "./error";
 
 const ASSETS_BUNDLE = `
+TEXTURE;atlas;assets/atlas.png;
 TEXTURE;terrain;assets/terrain.png;
+CSV;atlas_sprites;assets/atlas.csv;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
+SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
+SHADER;highlight_sprites;assets/highlight_sprites.vert.glsl;assets/highlight_sprites.frag.glsl;
+SHADER;debug;assets/debug.vert.glsl;assets/debug.frag.glsl;
 `;
 
 export class Shader {

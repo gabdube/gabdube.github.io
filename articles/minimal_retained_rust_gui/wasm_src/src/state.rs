@@ -1,6 +1,8 @@
 pub mod game_state;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
+use crate::shared::{PositionF32, pos};
+
 use super::GameClient;
 
 #[derive(Default, Debug, PartialEq, Eq, Copy, Clone, TryFromBytes, IntoBytes, Immutable)]
@@ -15,6 +17,7 @@ pub enum GameStateValue {
 pub struct GameState {
     pub value: GameStateValue,
     pub scroll_view: bool,
+    pub selection_start: Option<PositionF32>,
 }
 
 impl crate::store::StoreLoad for GameState {
@@ -30,7 +33,16 @@ impl crate::store::StoreLoad for GameState {
 }
 
 pub fn init(client: &mut GameClient) {
-    client.world_data.reset();
-    client.world_data.initialize_terrain(32, 32);
+    let wd = &mut client.world_data;
+
+    wd.reset();
+    wd.initialize_terrain(32, 24);
+
+    wd.add_castle(pos(300.0, 300.0));
+    wd.add_tower(pos(650.0, 300.0));
+    wd.add_house(pos(800.0, 300.0));
+
+    wd.add_knight(pos(300.0, 550.0));
+
     client.state.value = GameStateValue::Game;
 }

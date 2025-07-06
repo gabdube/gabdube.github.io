@@ -74,3 +74,4 @@ macro_rules! error {
 }
 
 macro_rules! save_err { ($($arg:tt)*) => { error!($crate::error::ErrorType::SaveLoad, $($arg)*) }; }
+macro_rules! assets_err { ($($arg:tt)*) => { error!($crate::error::ErrorType::Assets, $($arg)*) }; }
