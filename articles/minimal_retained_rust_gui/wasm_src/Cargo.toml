@@ -21,3 +21,5 @@ hecs = "0.10.5"
 # Std hashmap replacement
 fnv = "1.0.7"
 
+# Used by delaunator
+robust = "1.0.0"

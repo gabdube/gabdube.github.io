@@ -1,6 +1,22 @@
+use hecs::Entity;
 use zerocopy_derive::{FromBytes, Immutable, IntoBytes};
 use crate::shared::{PositionF32, AABB, pos, aabb, size};
-use super::base::BaseSpriteFlags;
+
+#[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
+pub struct BaseSpriteFlags(pub u8);
+
+impl BaseSpriteFlags {
+    pub const FLIPPED: u8  = 0x1;
+    pub const HIGHLIGHTED: u8 = 0x2;
+
+    flags!(flipped, set_flipped, clear_flipped, Self::FLIPPED);
+    flags!(highlighted, set_highlighted, clear_highlighted, Self::HIGHLIGHTED);
+
+    #[inline(always)]
+    pub const fn empty() -> Self {
+        BaseSpriteFlags(0)
+    }
+}
 
 #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable)]
 pub struct BaseSprite {
@@ -23,18 +39,6 @@ impl BaseSprite {
 
     pub fn rect(&self) -> AABB {
         aabb(self.position, self.texcoord.size())
-    }
-
-    /// Return a point at the bottom center of a sprite
-    pub fn base_position(&self) -> PositionF32 {
-        let [width, height] = self.texcoord.splat_size();
-        pos(self.position.x + (width * 0.5), self.position.y + height)
-    }
-
-    pub fn set_base_position(&mut self, position: PositionF32) {
-        let [width, height] = self.texcoord.splat_size();
-        self.position.x = position.x - (width * 0.5);
-        self.position.y = position.y - height;
     }
 }
 
@@ -68,18 +72,6 @@ pub struct AnimatedSprite {
 }
 
 impl AnimatedSprite {
-    pub fn sprite(&self) -> StaticSprite {
-        let [width, _] = self.sprite_base.splat_size();
-        StaticSprite {
-            texcoord: AABB { 
-                left: self.sprite_base.left,
-                top: self.sprite_base.top,
-                right: self.sprite_base.left + (width / self.frame_count as f32),
-                bottom: self.sprite_base.bottom
-            }
-        }
-    }
-
     pub fn animate(&self) -> AnimationState {
         let [mut width, height] = self.sprite_base.splat_size();
         width /= self.frame_count as f32; 
@@ -93,3 +85,11 @@ impl AnimatedSprite {
         }
     }
 }
+
+#[derive(Copy, Clone)]
+pub struct OrderedSprite {
+    pub e: Entity,
+    pub y: f32,
+    pub sprite: BaseSprite,
+}
+

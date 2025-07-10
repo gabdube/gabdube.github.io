@@ -28,7 +28,7 @@ impl AtlasData {
         fn parse(v: &str) -> f32 { str::parse::<f32>(v).unwrap_or(0.0) }
         fn parse_u32(v: &str) -> u32 { str::parse::<u32>(v).unwrap_or(0) }
 
-        crate::shared::split_csv::<6, _>(csv, |args| {
+        crate::shared::split_csv::<7, _>(csv, |args| {
             let name = args[0];
             let frame_count = parse_u32(args[1]);
             let left = parse(args[2]);

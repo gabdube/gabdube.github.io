@@ -4,7 +4,9 @@ mod logging;
 #[macro_use]
 mod error;
 
+#[macro_use]
 mod shared;
+
 mod data;
 mod state;
 mod output;
@@ -88,6 +90,7 @@ impl GameClient {
             },
         }
 
+        self.world_data.run_behaviours();
         self.world_data.finalize_update();
 
         output::GameOutput::update(self);

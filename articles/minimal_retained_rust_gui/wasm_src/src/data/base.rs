@@ -1,22 +1,5 @@
 use zerocopy_derive::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 
-macro_rules! flags {
-    ($get:ident, $value:expr) => {
-        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
-    };
-
-    ($get:ident, $set:ident, $value:expr) => {
-        #[inline(always)] pub fn $set(&mut self) { self.0 |= $value; }
-        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
-    };
-
-    ($get:ident, $set:ident, $clear:ident, $value:expr) => {
-        #[inline(always)] pub fn $set(&mut self) { self.0 |= $value; }
-        #[inline(always)] pub fn $clear(&mut self) { self.0 &= !$value; }
-        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
-    };
-}
-
 #[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
 pub struct RenderFlags(pub u32);
 
@@ -32,22 +15,6 @@ impl RenderFlags {
     flags!(update_animations, set_update_animations, Self::UPDATE_ANIMATIONS);
 
     pub fn clear(&mut self) { self.0 = 0; }
-}
-
-#[derive(Default, Copy, Clone, FromBytes, IntoBytes, Immutable)]
-pub struct BaseSpriteFlags(pub u8);
-
-impl BaseSpriteFlags {
-    pub const FLIPPED: u8  = 0x1;
-    pub const HIGHLIGHTED: u8 = 0x2;
-
-    flags!(flipped, set_flipped, clear_flipped, Self::FLIPPED);
-    flags!(highlighted, set_highlighted, clear_highlighted, Self::HIGHLIGHTED);
-
-    #[inline(always)]
-    pub const fn empty() -> Self {
-        BaseSpriteFlags(0)
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Default, IntoBytes, TryFromBytes, Immutable)]

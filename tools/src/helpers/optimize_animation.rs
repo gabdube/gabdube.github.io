@@ -1,8 +1,6 @@
 use crate::shared::{OffsetU32, RectU32, RectI32, SizeU32, rect_u32, rect_i32, size_u32};
 use super::PIXEL_SIZE;
 
-const PADDING: i32 = 2; // Value added when scanning sprites
-
 #[derive(Copy, Clone, Debug)]
 struct SpriteScan {
     rect: RectI32,
@@ -23,6 +21,7 @@ pub struct OptimizeAnimationParams<'a> {
     pub optimized_size: &'a mut SizeU32,
     pub optimized_frame_size: &'a mut SizeU32,
     pub dst_bytes: &'a mut Vec<u8>,
+    pub padding: i32,
 }
  
 pub fn optimize_animation(params: &mut OptimizeAnimationParams) {
@@ -63,10 +62,10 @@ fn scan_single_sprite(params: &OptimizeAnimationParams, scan_rect: &RectU32) -> 
         }
     }
 
-    rect.left = i32::max(rect.left - PADDING, 0);
-    rect.top = i32::max(rect.top - PADDING, 0);
-    rect.right = i32::min(rect.right + PADDING, params.src_rect.right as i32);
-    rect.bottom = i32::min(rect.bottom + PADDING, params.src_rect.bottom as i32);
+    rect.left = i32::max(rect.left - params.padding, 0);
+    rect.top = i32::max(rect.top - params.padding, 0);
+    rect.right = i32::min(rect.right + params.padding, params.src_rect.right as i32);
+    rect.bottom = i32::min(rect.bottom + params.padding, params.src_rect.bottom as i32);
 
     let center_x = (scan_rect.left + (scan_rect.width() / 2)) as i32;
     let center_y = (scan_rect.top + (scan_rect.height() / 2)) as i32;

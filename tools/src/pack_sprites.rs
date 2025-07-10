@@ -1,14 +1,15 @@
 /*!
 Usage: cargo run --release -p tools -- pack_sprites --input-csv sprites.csv --output-image test.png --output-csv test.csv --max-width 512
 
-cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 700 --premultiply-alpha
+cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 700
 */
 
 use std::collections::HashMap;
 use crate::helpers::{self, LoadSpriteParams, SpriteData, SpritePackingHelper};
 use crate::shared;
 
-const PIXEL_SIZE: usize = 4;
+const PIXEL_SIZE: usize = 4; // rbga u8
+const PACKING_PADDING: u32 = 2;  // Padding (in pixels) to add between each the border of the textures and between each sprites
 
 struct PackSpriteArgs {
     output_image_dst: String,
@@ -138,7 +139,7 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
             }
         };
 
-        let data = SpriteData::load_from_png(&image, ty);
+        let data = SpriteData::load_from_png(&image, ty, PACKING_PADDING);
 
         state.input_sprites.push(InputSprite { 
             name,
@@ -271,9 +272,8 @@ fn pack_sprites(state: &mut PackSpriteState) -> bool {
         return false;
     }
 
-    const PACKING_PADDING: u32 = 2;
     let packed_sprites = generate_pack_sprites(state);
-    let packed = SpritePackingHelper::new(state.max_width, PACKING_PADDING, packed_sprites);
+    let packed = SpritePackingHelper::new(state.max_width, packed_sprites);
     
     allocate_output_image(state, &packed);
     copy_pack_sprites_to_state(state, &packed);
@@ -296,8 +296,8 @@ fn write_csv(state: &PackSpriteState) {
     let mut csv_out = String::with_capacity(default_buffer_size);
 
     for sprite in state.input_sprites.iter() {
-        let [left, top, right, bottom] = sprite.output_rect.splat();
         let sprite_count = sprite.data.sprite_count();
+        let [left, top, right, bottom] = sprite.output_rect.splat();
         csv_out.push_str(&format!("{};{};{};{};{};{};\n", &sprite.name, sprite_count, left, top, right, bottom));
     }
 

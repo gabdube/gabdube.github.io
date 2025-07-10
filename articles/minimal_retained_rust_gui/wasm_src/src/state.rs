@@ -40,9 +40,12 @@ pub fn init(client: &mut GameClient) {
 
     wd.add_castle(pos(300.0, 300.0));
     wd.add_tower(pos(650.0, 300.0));
-    wd.add_house(pos(800.0, 300.0));
+    wd.add_house(pos(850.0, 300.0));
 
     wd.add_knight(pos(300.0, 550.0));
+    wd.add_knight(pos(300.0, 650.0));
+
+    wd.compute_navigation();
 
     client.state.value = GameStateValue::Game;
 }

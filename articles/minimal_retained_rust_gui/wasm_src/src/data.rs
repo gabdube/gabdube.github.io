@@ -4,16 +4,22 @@ pub mod sprites;
 pub mod assets;
 use assets::Assets;
 
+pub mod debug;
+use debug::DebugState;
+
 pub mod terrain;
 use terrain::Terrain;
 
-pub mod debug;
-use debug::DebugState;
+pub mod navigation;
+use navigation::NavigationState;
+
+pub mod behaviour;
+use behaviour::BehaviourState;
 
 pub mod world;
 use world::World;
 
-use crate::shared::{PositionF32, SizeF32, pos};
+use crate::shared::{pos, PositionF32, SizeF32};
 
 const ANIMATION_INTERVAL: f64 = 1000.0 / 16.0; // 16fps
 
@@ -42,6 +48,7 @@ pub struct CommonParams {
 impl CommonParams {
     pub fn primary_mouse_just_pressed(&self) -> bool { self.mouse_buttons[0].just_pressed() }
     pub fn primary_mouse_just_released(&self) -> bool { self.mouse_buttons[0].just_released() }
+    pub fn secondary_mouse_just_pressed(&self) -> bool { self.mouse_buttons[1].just_pressed() }
     pub fn middle_mouse_just_pressed(&self) -> bool { self.mouse_buttons[2].just_pressed() }
     pub fn middle_mouse_released(&self) -> bool { self.mouse_buttons[2].released() }
 
@@ -61,6 +68,8 @@ pub struct GameData {
     pub common: CommonParams,
     pub assets: Assets,
     pub terrain: Terrain,
+    pub navigation: NavigationState,
+    pub behaviours: BehaviourState,
     pub debug: DebugState,
 }
 
@@ -85,6 +94,14 @@ impl GameWorldData {
         self.data.common.render_flags.set_update_terrain();
     }
 
+    pub fn compute_navigation(&mut self) {
+        NavigationState::rebuild_navmesh(self);
+    }
+
+    pub fn run_behaviours(&mut self) {
+        BehaviourState::run(self);
+    }
+
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {
         let data = &mut self.data;
         let zoom = 1.0 / data.common.zoom;
@@ -103,7 +120,8 @@ impl GameWorldData {
         }
     }
 
-    pub fn game_mouse_position(&self) -> PositionF32 {
+    /// Mouse position in world coordinates. Ie: relative to the world view offset
+    pub fn world_mouse_position(&self) -> PositionF32 {
         let mouse_position = self.data.common.mouse_position;
         let view_offset = self.data.common.view_offset;
         mouse_position - view_offset
@@ -163,7 +181,7 @@ impl GameWorldData {
 
     pub fn add_knight(&mut self, position: PositionF32) {
         let idle = self.data.assets.atlas.warrior_idle;
-        self.world.add_warrior(position, idle.animate());
+        self.world.add_knight(position, idle.animate());
         self.data.common.total_sprites += 1;
     }
 }
@@ -175,7 +193,9 @@ impl crate::store::StoreLoad for GameWorldData {
         let data = &mut self.data;
         data.common.store(writer);
         data.assets.store(writer);
+        data.navigation.store(writer);
         data.terrain.store(writer);
+        data.behaviours.store(writer);
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
@@ -186,7 +206,9 @@ impl crate::store::StoreLoad for GameWorldData {
         let data = &mut world_data.data;
         data.common = CommonParams::load(reader)?;
         data.assets = Assets::load(reader)?;
+        data.navigation = NavigationState::load(reader)?;
         data.terrain = Terrain::load(reader)?;
+        data.behaviours = BehaviourState::load(reader)?;
 
         Ok(world_data)
     }

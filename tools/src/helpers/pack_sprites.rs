@@ -10,7 +10,6 @@ struct PackStateRef<'a> {
     sprites: &'a mut [PackSprite],
     processed: &'a mut [bool],
     area: RectU32,
-    padding: u32,
 }
 
 impl<'a> PackStateRef<'a> {
@@ -25,18 +24,20 @@ impl<'a> PackStateRef<'a> {
                 }
             })?;
 
-        let pack = &mut self.sprites[index];
-        let size = pack.size;
-        pack.rect = RectU32 { 
+        let size = self.sprites[index].size;
+        self.sprites[index].rect = self.dst_sprite_area(size);
+        self.processed[index] = true;
+
+        Some(size)
+    }
+
+    fn dst_sprite_area(&self, size: SizeU32) -> RectU32 {
+        RectU32 { 
             left: self.area.left,
             top: self.area.top,
             right: self.area.left + size.width,
             bottom: self.area.top + size.height
-        };
-
-        self.processed[index] = true;
-
-        Some(size)
+        }
     }
 
     fn has_remaining_items(&self) -> bool {
@@ -48,11 +49,10 @@ pub struct SpritePackingHelper {
     sprites: Vec<PackSprite>,
     processed: Vec<bool>,
     size: SizeU32,
-    padding: u32,
 }
 
 impl SpritePackingHelper {
-    pub fn new(max_width: u32, padding: u32, mut sprites: Vec<PackSprite>) -> Self {
+    pub fn new(max_width: u32, mut sprites: Vec<PackSprite>) -> Self {
         use std::cmp::Ordering;
 
         fn sort_sprites(sprite1: &PackSprite, sprite2: &PackSprite) -> Ordering {
@@ -72,7 +72,6 @@ impl SpritePackingHelper {
             sprites,
             processed: vec![false; sprites_count],
             size: SizeU32::default(),
-            padding
         };
 
         pack_state.compute(max_width);
@@ -90,6 +89,7 @@ impl SpritePackingHelper {
 
     fn compute(&mut self, max_width: u32) {
         let mut top = 0;
+        let left = 0;
 
         loop {
             let size = match self.processed.iter().enumerate().find(|(_, processed)| **processed == false ) {
@@ -100,15 +100,14 @@ impl SpritePackingHelper {
             let pack_state = PackStateRef {
                 sprites: &mut self.sprites,
                 processed: &mut self.processed,
-                area: rect_u32(0, top, max_width, top+size.height),
-                padding: self.padding,
+                area: rect_u32(left, top, max_width, top+size.height),
             };
 
             if !Self::pack_row(pack_state) {
                 break;
             }
     
-            top += size.height + self.padding;
+            top += size.height;
         }
 
         self.size.width = max_width;
@@ -132,14 +131,13 @@ impl SpritePackingHelper {
                         right: state.area.left + size.width,
                         bottom: state.area.bottom,
                     },
-                    padding: state.padding,
                 };
                 if !Self::pack_row(state) {
                     return false;
                 }
             }
     
-            state.area.left += size.width + state.padding;
+            state.area.left += size.width;
         }
     }
 }

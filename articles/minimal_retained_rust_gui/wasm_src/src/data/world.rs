@@ -1,38 +1,19 @@
+mod tags;
+pub use tags::*;
+
+mod select;
 mod store;
 
 use hecs::{Entity, World as HecsWorld};
-use zerocopy_derive::{FromBytes, Immutable, IntoBytes};
-use crate::shared::{PositionF32, AABB};
-use super::sprites::{BaseSprite, AnimationState, StaticSprite};
-
-
-#[derive(Default)] pub struct IsCastle;
-#[derive(Default)] pub struct IsTower;
-#[derive(Default)] pub struct IsHouse;
-#[derive(Default)] pub struct IsKnight;
-
-#[derive(Default)] pub struct HasCollision;
-
-#[derive(Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct InsertSprite {
-    pub position: PositionF32,
-    pub sprite: AABB,
-}
-
-#[derive(Copy, Clone)]
-pub struct OrderedSprite {
-    pub e: Entity,
-    pub y: f32,
-    pub sprite: BaseSprite,
-}
+use crate::data::behaviour::KnightBehaviourState;
+use crate::shared::PositionF32;
+use super::sprites::{BaseSprite, AnimationState, StaticSprite, OrderedSprite};
 
 /**
     Utility wrapper over `HecsWorld`. This is basically the game database.
 */
 pub struct World {
     inner: HecsWorld,
-    // The sprite displayed when currently inserting new elements in the game
-    insert_sprite: Option<InsertSprite>,
     // Quick lookup for the selected sprites
     selected_sprites: Vec<Entity>,
     // Sprites ordered by Y component. For rendering purpose
@@ -42,20 +23,25 @@ pub struct World {
 impl World {
 
     pub(super) fn add_house(&mut self, position: PositionF32, sprite: StaticSprite) -> Entity {
-        self.inner.spawn((IsHouse, HasCollision, BaseSprite::from_position_static(position, sprite)))
+        self.inner.spawn((IsHouse, HasCollision, EntityId::HOUSE, BaseSprite::from_position_static(position, sprite)))
     }
 
     pub(super) fn add_castle(&mut self, position: PositionF32, sprite: StaticSprite) -> Entity {
-        self.inner.spawn((IsCastle, HasCollision, BaseSprite::from_position_static(position, sprite)))
+        self.inner.spawn((IsCastle, HasCollision, EntityId::CASTLE, BaseSprite::from_position_static(position, sprite)))
     }
 
     pub(super) fn add_tower(&mut self, position: PositionF32, sprite: StaticSprite) -> Entity {
-        self.inner.spawn((IsTower, HasCollision, BaseSprite::from_position_static(position, sprite)))
+        self.inner.spawn((IsTower, HasCollision, EntityId::TOWER, BaseSprite::from_position_static(position, sprite)))
     }
 
-    pub(super) fn add_warrior(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
+    pub(super) fn add_knight(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
         let sprite = BaseSprite::from_position_static(position, animate.current_frame());
-        self.inner.spawn((IsKnight, sprite, animate))
+        self.inner.spawn((IsKnight, EntityId::KNIGHT, sprite, animate, KnightBehaviourState::idle()))
+    }
+
+    // Panics if `entity` is not a knight
+    pub fn knight_behaviour_mut<'a>(&'a mut self, entity: Entity) -> &'a mut KnightBehaviourState {
+        self.inner.query_one_mut::<&mut KnightBehaviourState>(entity).unwrap()
     }
 
     pub fn sprite_at_position(&mut self, position: PositionF32) -> Option<Entity> {
@@ -64,30 +50,8 @@ impl World {
             .map(|sprite| sprite.e )
     }
 
-    pub fn select_sprite_at_position(&mut self, position: PositionF32) {
-        if let Some(entity) = self.sprite_at_position(position) {
-            if let Ok(sprite) = self.inner.query_one_mut::<&mut BaseSprite>(entity) {
-                sprite.flags.set_highlighted();
-                sprite.highlight_color = [255; 3];
-                self.selected_sprites.push(entity);
-                // dbg!("Selected {:?}", entity);
-            }
-        }
-    }
-
-    pub fn clear_selected_sprites(&mut self) {
-        if self.selected_sprites.is_empty() {
-            return;
-        }
-
-        for &entity in self.selected_sprites.iter() {
-            if let Ok(sprite) = self.inner.query_one_mut::<&mut BaseSprite>(entity) {
-                sprite.flags.clear_highlighted();
-                sprite.highlight_color = [0; 3];
-            }
-        }
-
-        self.selected_sprites.clear();
+    pub fn sprites_with_collisions(&self) -> hecs::QueryBorrow<(&BaseSprite, &HasCollision)> {
+        self.inner.query::<(&BaseSprite, &HasCollision)>()
     }
 
     /// Order all sprites in the world by their y component
@@ -134,6 +98,12 @@ impl World {
             .map(|ordered_sprite| ordered_sprite.sprite )
     }
 
+    pub fn entity_id_mut(&mut self, entity: Entity) -> EntityId {
+        self.inner.query_one_mut::<&EntityId>(entity)
+            .map(|id| *id )
+            .unwrap()
+    }
+
 }
 
 
@@ -145,7 +115,6 @@ impl Default for World {
     fn default() -> Self {
         World {
             inner: HecsWorld::default(),
-            insert_sprite: None,
             selected_sprites: Vec::with_capacity(8),
             sprites_by_y_component: Vec::with_capacity(32),
         }

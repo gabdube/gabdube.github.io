@@ -3,6 +3,24 @@
 use zerocopy_derive::{Immutable, IntoBytes, FromBytes};
 use std::ops::{SubAssign, Sub};
 
+macro_rules! flags {
+    ($get:ident, $value:expr) => {
+        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
+    };
+
+    ($get:ident, $set:ident, $value:expr) => {
+        #[inline(always)] pub fn $set(&mut self) { self.0 |= $value; }
+        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
+    };
+
+    ($get:ident, $set:ident, $clear:ident, $value:expr) => {
+        #[inline(always)] pub fn $set(&mut self) { self.0 |= $value; }
+        #[inline(always)] pub fn $clear(&mut self) { self.0 &= !$value; }
+        #[inline(always)] pub const fn $get(&self) -> bool { self.0 & $value > 0 }
+    };
+}
+
+
 #[derive(Default, Debug, Copy, Clone, PartialEq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct PositionF32 {
@@ -12,7 +30,7 @@ pub struct PositionF32 {
 
 impl PositionF32 {
     #[inline(always)]
-    pub fn splat(&self) -> [f32; 2] {
+    pub const fn splat(&self) -> [f32; 2] {
         [self.x, self.y]
     }
 
@@ -59,23 +77,35 @@ pub struct AABB {
 }
 
 impl AABB {
-    pub fn splat(&self) -> [f32; 4] {
+    pub const  fn splat(&self) -> [f32; 4] {
         [self.left, self.top, self.right, self.bottom]
     }
 
-    pub fn splat_size(&self) -> [f32; 2] {
+    pub const fn splat_size(&self) -> [f32; 2] {
         [self.right - self.left, self.bottom - self.top]
     }
 
-    pub fn size(&self) -> SizeF32 {
+    pub const fn size(&self) -> SizeF32 {
         SizeF32 { width: self.right - self.left, height: self.bottom - self.top }
     }
 
-    pub fn point_inside(&self, point: PositionF32) -> bool {
+    pub const fn point_inside(&self, point: PositionF32) -> bool {
         point.x >= self.left && point.x <= self.right && point.y >= self.top && point.y <= self.bottom
     }
 
-    pub fn height(&self) -> f32 {
+    pub const fn intersects(&self, other: &Self) -> bool {
+        if self.right < other.left || other.right < self.left {
+            return false
+        }
+
+        if self.bottom < other.top || other.bottom < self.top {
+            return false
+        }
+
+        true
+    }
+
+    pub const fn height(&self) -> f32 {
         self.bottom - self.top
     }
 }

@@ -2,7 +2,8 @@
 use hecs::{Entity, World as HecsWorld};
 use zerocopy::transmute;
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use super::{World, BaseSprite, IsKnight, IsCastle, IsHouse, HasCollision, AnimationState};
+use crate::{data::behaviour::KnightBehaviourState, store::StoreLoad};
+use super::{World, BaseSprite, HasCollision, AnimationState, tags::*};
 
 #[derive(Copy, Clone, IntoBytes, TryFromBytes, Immutable)]
 pub struct StoreActor {
@@ -15,18 +16,17 @@ impl crate::store::StoreLoad for World {
         store_knights(writer, &mut self.inner);
         store_actors::<&IsHouse>(writer, &mut self.inner);
         store_actors::<&IsCastle>(writer, &mut self.inner);
+        store_actors::<&IsTower>(writer, &mut self.inner);
         store_selected(writer, self);
-        writer.write_option(&self.insert_sprite);
-
     }
 
     fn load(reader: &mut crate::store::StoreReader) -> Result<Self, crate::error::Error> {
         let mut world = World::default();
         spawn_knights(reader, &mut world.inner)?;
-        spawn_actors::<IsHouse>(reader, &mut world.inner);
-        spawn_actors::<IsCastle>(reader, &mut world.inner);
+        spawn_actors::<IsHouse>(reader, &mut world.inner, EntityId::HOUSE);
+        spawn_actors::<IsCastle>(reader, &mut world.inner, EntityId::CASTLE);
+        spawn_actors::<IsTower>(reader, &mut world.inner, EntityId::TOWER);
         load_selected(reader, &mut world)?;
-        world.insert_sprite = reader.try_read_option()?;
 
         Ok(world)
     }
@@ -36,10 +36,11 @@ fn store_knights(writer: &mut crate::store::StoreWriter, world: &mut HecsWorld) 
     let count = world.query_mut::<(&IsKnight, &BaseSprite, &AnimationState)>().into_iter().count() as u32;
     writer.write(&count);
 
-    for (entity, (_, sprite, animate)) in world.query_mut::<(&IsKnight, &BaseSprite, &AnimationState)>() {
+    for (entity, (_, sprite, animate, behaviour)) in world.query_mut::<(&IsKnight, &BaseSprite, &AnimationState, &mut KnightBehaviourState)>() {
         writer.write_entity_option(Some(entity));
         writer.write(sprite);
         writer.write(animate);
+        behaviour.store(writer);
     }
 }
 
@@ -73,7 +74,9 @@ fn spawn_knights(reader: &mut crate::store::StoreReader, world: &mut HecsWorld) 
         let entity = reader.try_read_entity_option()?.expect("Corrupted entity");
         let sprite: BaseSprite = reader.try_read()?;
         let animate: AnimationState = reader.try_read()?;
-        world.spawn_at(entity, (IsKnight, sprite, animate));
+        let behaviour = KnightBehaviourState::load(reader)?;
+        let id = EntityId::KNIGHT;
+        world.spawn_at(entity, (IsKnight, id, sprite, animate, behaviour));
     }
 
     Ok(())
@@ -82,12 +85,13 @@ fn spawn_knights(reader: &mut crate::store::StoreReader, world: &mut HecsWorld) 
 fn spawn_actors<T: hecs::Component + Default>(
     reader: &mut crate::store::StoreReader,
     world: &mut HecsWorld,
+    id: EntityId,
 ) {
     let actors = unsafe { reader.read_array_transmute::<StoreActor>() };
     world.reserve::<(T, BaseSprite)>(actors.len() as u32);
     for actor in actors.iter() {
         let entity = Entity::from_bits(transmute!(actor.entity)).expect("Corrupted entity data");
-        world.spawn_at(entity, (T::default(), HasCollision, actor.sprite));
+        world.spawn_at(entity, (T::default(), HasCollision, id, actor.sprite));
     }
 }
 

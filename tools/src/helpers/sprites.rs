@@ -1,4 +1,4 @@
-use crate::shared::{PngFile, SizeU32, RectU32, RectI32, rect_u32, size_u32, rect_i32};
+use crate::shared::{PngFile, SizeU32, RectU32, RectI32, rect_u32, rect_i32};
 
 pub const PIXEL_SIZE: usize = 4; // Size of rgba u8
 
@@ -45,17 +45,17 @@ pub struct SpriteData {
 
 impl SpriteData {
 
-    pub fn load_from_png(png: &PngFile, params: LoadSpriteParams) -> SpriteData {
+    pub fn load_from_png(png: &PngFile, params: LoadSpriteParams, padding: u32) -> SpriteData {
         let mut sprite = SpriteData::default();
 
         match params {
             LoadSpriteParams::Auto => {
                 let src_rect = rect_u32(0, 0, png.info.width, png.info.height);
-                optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels);
+                optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels, padding);
                 sprite.frame_size = sprite.size;
             },
             LoadSpriteParams::Crop(src_rect) => {
-                optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels);
+                optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels, padding);
                 sprite.frame_size = sprite.size;
             },
             LoadSpriteParams::Animation { frame_size } => {
@@ -67,7 +67,8 @@ impl SpriteData {
                     src_bytes: &png.data,
                     optimized_size: &mut sprite.size,
                     optimized_frame_size: &mut sprite.frame_size,
-                    dst_bytes: &mut sprite.pixels
+                    dst_bytes: &mut sprite.pixels,
+                    padding: padding as i32
                 };
 
                 optimize_animation::optimize_animation(&mut params);
@@ -93,12 +94,12 @@ fn optimize_simple_sprite(
     src_rect: &RectU32,
     src_bytes: &[u8],
     dst_size: &mut SizeU32,
-    dst_bytes: &mut Vec<u8>
+    dst_bytes: &mut Vec<u8>,
+    padding: u32
 ) {
     let mut optimized_rect = RectI32::default();
     optimize_sprite_rect(src_line_size, src_rect, src_bytes, &mut optimized_rect);
-    optimize_sprite_copy(src_line_size, src_bytes, &mut optimized_rect, dst_bytes);
-    *dst_size = size_u32(optimized_rect.width() as u32, optimized_rect.height() as u32);
+    optimize_sprite_copy(src_line_size, src_bytes, &optimized_rect, dst_size, dst_bytes, padding);
 }
 
 fn optimize_sprite_rect(
@@ -135,20 +136,43 @@ fn optimize_sprite_copy(
     src_line_size: usize,
     src_bytes: &[u8],
     optimized_rect: &RectI32,
-    dst_bytes: &mut Vec<u8>
+    dst_size: &mut SizeU32,
+    dst_bytes: &mut Vec<u8>,
+    padding: u32
 ) {
-    let width = optimized_rect.width() as usize;
-    let height = optimized_rect.height() as usize;
-    *dst_bytes = Vec::with_capacity(width * height * PIXEL_SIZE);
+    let padding = padding as usize;
+    let padding2 = padding + padding;
+    let width = padding2 + optimized_rect.width() as usize;
+    let height = padding2 + optimized_rect.height() as usize;
+    *dst_bytes = vec![0; width * height * PIXEL_SIZE];
+
 
     let top = optimized_rect.top as usize;
     let bottom = optimized_rect.bottom as usize;
     let left = optimized_rect.left as usize;
+    
     let dst_line_size = width * PIXEL_SIZE;
+    let copy_line_size = optimized_rect.width() as usize * PIXEL_SIZE;
 
-    for i in top..bottom {
-        let bytes_start = (i * src_line_size) + (left * PIXEL_SIZE);
-        dst_bytes.extend_from_slice(&src_bytes[bytes_start..bytes_start+dst_line_size]);
+    let mut dst_column = padding as usize;
+    let mut src_column = top;
+
+    while src_column < bottom {
+        let src_bytes_start = (src_column * src_line_size) + (left * PIXEL_SIZE);
+        let dst_bytes_start = (dst_column * dst_line_size) + (padding * PIXEL_SIZE);
+
+        unsafe {
+            ::std::ptr::copy_nonoverlapping(
+                src_bytes.as_ptr().add(src_bytes_start),
+                dst_bytes.as_mut_ptr().add(dst_bytes_start),
+                copy_line_size
+            );
+        }
+
+        src_column += 1;
+        dst_column += 1;
     }
+
+    *dst_size = SizeU32 { width: width as u32, height: height as u32 };
 }
 

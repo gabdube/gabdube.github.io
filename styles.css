@@ -159,6 +159,10 @@ code {
 
 /* Articles */
 
+.article > header > h2 {
+    text-wrap-mode: nowrap;
+}
+
 .article h2 {
     color: rgb(255, 255, 255);
 }
