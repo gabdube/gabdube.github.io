@@ -3,8 +3,11 @@ mod move_to;
 
 use hecs::Entity;
 use zerocopy::transmute;
+use crate::data::{World, GameData};
 use crate::shared::PositionF32;
-use super::{AnyBehaviour, store::{StoreBehaviour, StoreBehaviourType}};
+use super::store::{StoreBehaviour, StoreBehaviourType};
+use super::AnyBehaviour;
+
 
 #[derive(Copy, Clone)]
 pub enum KnightBehaviourType {
@@ -53,17 +56,27 @@ pub struct KnightBehaviour {
 
 impl KnightBehaviour {
 
+    pub(super) fn run_all(world: &World, data: &GameData) {
+        for (entity, behaviour_state) in world.all_knights_behaviour().iter() {
+            match behaviour_state.ty {
+                KnightBehaviourType::Idle => idle::run(entity, behaviour_state, world, idle::params(data)),
+                KnightBehaviourType::MoveToPoint { .. } => move_to::run(entity, behaviour_state, world, move_to::params(data)),
+            }
+        }
+    }
+
     pub(super) fn insert_into_world(self, world_data: &mut crate::data::GameWorldData) {
         if !world_data.world.entity_id_mut(self.entity).is_knight() {
             dbg!("KnightBehaviour entity ID is not knight, aborting {:?}", self.ty.name());
             return;
         }
 
-        match self.ty {
-            KnightBehaviourType::Idle => idle::new(world_data, self.entity),
-            KnightBehaviourType::MoveToPoint { target } => move_to::new(world_data, self.entity, target)
-        }
+        let state = world_data.world.knight_behaviour_mut(self.entity);
 
+        match self.ty {
+            KnightBehaviourType::Idle => idle::swap_state(state),
+            KnightBehaviourType::MoveToPoint { target } => move_to::swap_state(state, target)
+        }
     }
 
     pub fn move_to_point(pawn: Entity, target: PositionF32) -> Self {

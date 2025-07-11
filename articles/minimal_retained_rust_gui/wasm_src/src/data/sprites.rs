@@ -28,6 +28,15 @@ pub struct BaseSprite {
 
 impl BaseSprite {
 
+    pub const fn from_position(position: PositionF32) -> Self {
+        BaseSprite {
+            position,
+            texcoord: AABB { left: 0.0, top: 0.0, right: 0.0, bottom: 0.0 },
+            highlight_color: [0, 0, 0],
+            flags: BaseSpriteFlags::empty(),
+        }
+    }
+
     pub const fn from_position_static(position: PositionF32, static_sprite: StaticSprite) -> Self {
         BaseSprite {
             position,
@@ -39,6 +48,23 @@ impl BaseSprite {
 
     pub fn rect(&self) -> AABB {
         aabb(self.position, self.texcoord.size())
+    }
+
+    /// Return a point at the bottom center of a sprite
+    pub fn base_position(&self) -> PositionF32 {
+        let [width, height] = self.texcoord.splat_size();
+        pos(self.position.x + (width * 0.5), self.position.y + height)
+    }
+
+    pub fn set_base_position(&mut self, position: PositionF32, pixel_perfect: bool) {
+        let [width, height] = self.texcoord.splat_size();
+        self.position.x = position.x - (width * 0.5);
+        self.position.y = position.y - height;
+
+        if pixel_perfect {
+            self.position.x = f32::trunc(self.position.x);
+            self.position.y = f32::trunc(self.position.y);
+        }
     }
 }
 

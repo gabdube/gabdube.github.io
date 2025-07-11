@@ -41,7 +41,7 @@ impl PositionF32 {
     }
 
     pub fn roughly_equal(&self, other: PositionF32) -> bool {
-        (self.x - other.x).abs() < 2.0 && (self.y - other.y).abs() < 2.0
+        (self.x - other.x).abs() < f32::EPSILON && (self.y - other.y).abs() < f32::EPSILON
     }
 }
 

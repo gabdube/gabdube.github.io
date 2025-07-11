@@ -1,3 +1,5 @@
+mod shared;
+
 mod knights;
 pub use knights::{KnightBehaviour, KnightBehaviourState};
 
@@ -24,11 +26,11 @@ impl BehaviourState {
 
     pub fn run(world_data: &mut super::GameWorldData) {
         if !world_data.data.behaviours.new.is_empty() {
-            Self::run_new_behaviour(world_data);
+            Self::run_new_behaviour(world_data); 
         }
        
         Self::run_inner(world_data);
-    }
+    } 
 
     fn run_new_behaviour(world_data: &mut super::GameWorldData) {
         let behaviours: Vec<AnyBehaviour> = world_data.data.behaviours.new.drain(..).collect();
@@ -40,8 +42,8 @@ impl BehaviourState {
         }
     }
 
-    fn run_inner(world_data: &mut super::GameWorldData) {
-
+    fn run_inner(world_data: &super::GameWorldData) {
+        KnightBehaviour::run_all(&world_data.world, &world_data.data);
     }
 }
 

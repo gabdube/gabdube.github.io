@@ -4,7 +4,7 @@ pub use tags::*;
 mod select;
 mod store;
 
-use hecs::{Entity, World as HecsWorld};
+use hecs::{World as HecsWorld, Entity, QueryBorrow};
 use crate::data::behaviour::KnightBehaviourState;
 use crate::shared::PositionF32;
 use super::sprites::{BaseSprite, AnimationState, StaticSprite, OrderedSprite};
@@ -34,14 +34,51 @@ impl World {
         self.inner.spawn((IsTower, HasCollision, EntityId::TOWER, BaseSprite::from_position_static(position, sprite)))
     }
 
-    pub(super) fn add_knight(&mut self, position: PositionF32, animate: AnimationState) -> Entity {
-        let sprite = BaseSprite::from_position_static(position, animate.current_frame());
-        self.inner.spawn((IsKnight, EntityId::KNIGHT, sprite, animate, KnightBehaviourState::idle()))
+    pub(super) fn add_knight(&mut self, position: PositionF32) -> Entity {
+        self.inner.spawn((IsKnight, EntityId::KNIGHT, BaseSprite::from_position(position), AnimationState::default(), KnightBehaviourState::idle()))
     }
 
     // Panics if `entity` is not a knight
     pub fn knight_behaviour_mut<'a>(&'a mut self, entity: Entity) -> &'a mut KnightBehaviourState {
         self.inner.query_one_mut::<&mut KnightBehaviourState>(entity).unwrap()
+    }
+
+    pub fn all_knights_behaviour<'a>(&self) -> QueryBorrow<&mut KnightBehaviourState> {
+        self.inner.query::<&mut KnightBehaviourState>()
+    }
+
+    pub fn set_sprite_animation(&self, entity: Entity, new_animation: AnimationState) {
+        if let Ok(mut query) = self.inner.query_one::<(&mut BaseSprite, &mut AnimationState)>(entity) {
+            if let Some((sprite, animation)) = query.get() {
+                sprite.texcoord = new_animation.current_frame().texcoord;
+                *animation = new_animation;
+            }
+        }
+    }
+
+    pub fn sprite_base_position(&self, entity: Entity) -> Option<PositionF32> {
+        let mut sprite_query = self.inner.query_one::<&BaseSprite>(entity).ok()?;
+        let sprite = sprite_query.get()?;
+        Some(sprite.base_position())
+    }
+
+    pub fn set_sprite_position(&self, entity: Entity, position: PositionF32, pixel_perfect: bool) {
+        if let Ok(mut query) = self.inner.query_one::<&mut BaseSprite>(entity) {
+            if let Some(sprite) = query.get() {
+                 sprite.set_base_position(position, pixel_perfect);
+            }
+        }
+    }
+
+    pub fn flip_sprite(&self, entity: Entity, flipped: bool) {
+        if let Ok(mut query) = self.inner.query_one::<&mut BaseSprite>(entity) {
+            if let Some(sprite) = query.get() {
+                match flipped {
+                    true => { sprite.flags.set_flipped(); }
+                    false => { sprite.flags.clear_flipped(); }
+                }
+            }
+        }
     }
 
     pub fn sprite_at_position(&mut self, position: PositionF32) -> Option<Entity> {

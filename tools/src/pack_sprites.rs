@@ -1,7 +1,7 @@
 /*!
 Usage: cargo run --release -p tools -- pack_sprites --input-csv sprites.csv --output-image test.png --output-csv test.csv --max-width 512
 
-cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 700
+cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 712
 */
 
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use crate::helpers::{self, LoadSpriteParams, SpriteData, SpritePackingHelper};
 use crate::shared;
 
 const PIXEL_SIZE: usize = 4; // rbga u8
-const PACKING_PADDING: u32 = 2;  // Padding (in pixels) to add between each the border of the textures and between each sprites
+const PACKING_PADDING: u32 = 3;  // Padding (in pixels) to add between each the border of the textures and between each sprites
 
 struct PackSpriteArgs {
     output_image_dst: String,

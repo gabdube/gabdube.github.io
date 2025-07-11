@@ -19,8 +19,8 @@ pub struct AtlasData {
     pub house: StaticSprite,
     pub tower: StaticSprite,
 
-    pub warrior_idle: AnimatedSprite,
-    pub warrior_run: AnimatedSprite,
+    pub knight_idle: AnimatedSprite,
+    pub knight_run: AnimatedSprite,
 }
 
 impl AtlasData {
@@ -41,8 +41,8 @@ impl AtlasData {
                 "house" => { self.house = StaticSprite { texcoord: AABB { left, top, right, bottom } }; }
                 "tower" => { self.tower = StaticSprite { texcoord: AABB { left, top, right, bottom } }; }
 
-                "warrior_idle" => { self.warrior_idle = AnimatedSprite { sprite_base: AABB { left, top, right, bottom }, frame_count }; }
-                "warrior_run" => { self.warrior_run = AnimatedSprite { sprite_base: AABB { left, top, right, bottom }, frame_count }; }
+                "warrior_idle" => { self.knight_idle = AnimatedSprite { sprite_base: AABB { left, top, right, bottom }, frame_count }; }
+                "warrior_run" => { self.knight_run = AnimatedSprite { sprite_base: AABB { left, top, right, bottom }, frame_count }; }
 
                 _ => { warn!("Unknown atlas key {:?}", name) }
             }

@@ -180,8 +180,7 @@ impl GameWorldData {
     }
 
     pub fn add_knight(&mut self, position: PositionF32) {
-        let idle = self.data.assets.atlas.warrior_idle;
-        self.world.add_knight(position, idle.animate());
+        self.world.add_knight(position);
         self.data.common.total_sprites += 1;
     }
 }

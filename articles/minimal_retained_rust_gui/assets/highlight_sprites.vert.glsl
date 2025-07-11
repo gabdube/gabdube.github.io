@@ -9,7 +9,6 @@ uniform vec2 view_position;
 uniform vec2 view_size;
 
 out vec4 highlight_color;
-out vec4 texcoord_bounds;
 out vec2 uv;
 
 
@@ -21,13 +20,6 @@ void main() {
     uv = vec2(
         uv_offset.x + (in_position.x * uv_size.x),  
         uv_offset.y + (in_position.y * uv_size.y)
-    );
-
-    texcoord_bounds = vec4(
-        in_instance_texcoord.x,
-        in_instance_texcoord.y,
-        in_instance_texcoord.x + in_instance_texcoord.z,
-        in_instance_texcoord.y + in_instance_texcoord.w
     );
 
     vec2 pos = vec2(
