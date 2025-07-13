@@ -110,6 +110,15 @@ impl AABB {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Default, FromBytes, IntoBytes, Immutable)]
+#[allow(non_camel_case_types)]
+pub struct AABB_U32 {
+    pub left: u32,
+    pub top: u32,
+    pub right: u32,
+    pub bottom: u32
+}
+
 //
 // Helpers method
 //
@@ -129,6 +138,10 @@ pub const fn aabb(position: PositionF32, size: SizeF32) -> AABB {
         right: position.x + size.width,
         bottom: position.y + size.height
     }
+}
+
+pub const fn aabb_u32(left: u32, top: u32, width: u32, height: u32) -> AABB_U32 {
+    AABB_U32 { left, top, right: left+width, bottom: top+height }
 }
 
 /// Split a csv string into up to `MAX_ARGS` parameters. Calls `callback` for each line splitted.

@@ -6,6 +6,9 @@ use message::*;
 mod debug_rasterizer;
 use debug_rasterizer::DebugMeshRasterizer;
 
+mod terrain_rasterizer;
+use terrain_rasterizer::TerrainMeshRasterizer;
+
 pub mod protocol;
 
 use zerocopy::{IntoBytes, Immutable};
@@ -97,39 +100,34 @@ impl GameOutput {
     }
 
     fn update_terrain(client: &mut GameClient) {
-        use crate::data::terrain::TERRAIN_SPRITE_SIZE;
-
         let data = &client.world_data.data;
         let output = &mut client.output;
+        let raster = TerrainMeshRasterizer::new(&data.assets.terrain, &data.terrain);
+
+        // Preallocating sprite instances
+        let total_size = raster.size_bytes();
+        if output.data[output.data_offset..].len() < total_size {
+            Self::realloc_data(&mut output.data, total_size);
+        }
+    
+        let instance_data_base = crate::shared::align_up(output.data_offset, 4);
+        output.data_offset = instance_data_base + total_size;
+
+        // Generate data
+        let (_, instance_data) = output.data.split_at_mut(instance_data_base);
+        raster.generate_instances(instance_data);
 
         // Message
-        let cell_count = data.terrain.cell_count();
         let update_terrain = UpdateTerrainParams { 
-            offset_bytes: output.data_offset,
-            size_bytes: cell_count * size_of::<gpu_shared::GpuTerrainSpriteData>(),
-            cell_count,
+            offset_bytes: instance_data_base,
+            size_bytes: raster.size_bytes(),
+            cell_count: raster.cell_count(),
         };
 
         output.messages.push(OutputMessage { 
             ty: OutputMessageType::UpdateTerrain,
             params: OutputMessageParams { update_terrain } }
         );
-
-        // Data
-        let mut x = 0.0;
-        let mut y = 0.0;
-        let mut sprite = gpu_shared::GpuTerrainSpriteData::default();
-        for _ in 0..data.terrain.height() {
-            for _ in 0..data.terrain.width() {
-                sprite.position = [x, y];
-                sprite.uv = [0.0, 0.0];
-                output.push_data(&sprite);
-                x += TERRAIN_SPRITE_SIZE;
-            }
-
-            x = 0.0;
-            y += TERRAIN_SPRITE_SIZE;
-        }
     }
 
     fn render_sprites(client: &mut GameClient) {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 
 pub struct PngFile {
@@ -97,6 +98,14 @@ pub fn split_csv<const MAX_ARGS: usize, CB: FnMut(&[&str])>(csv: &str, mut callb
     }
 }
 
+pub fn load_cached<'a>(cache: &'a mut HashMap<String, PngFile>, path: String) -> &'a PngFile {
+    if !cache.contains_key(&path) {
+        cache.insert(path.clone(), load_png(&path));
+    }
+
+    cache.get(&path).unwrap()
+}
+
 pub fn load_png(path: &str) -> PngFile {
     let file = match File::open(&path) {
         Ok(f) => f,
@@ -145,6 +154,50 @@ pub fn write_png(out_path: &str, pixels_data: &[u8], size: SizeU32) -> Result<()
     writer.write_image_data(pixels_data)?;
 
     Ok(())
+}
+
+pub fn copy_sprite(
+    dst: &mut [u8], dst_x: usize, dst_y: usize, dst_stride: usize,
+    src: &[u8], src_stride: usize, height: usize, pixel_size: usize
+) {
+    for line in 0..height {
+        let src_offset = line * src_stride;
+        let dst_offset = ((line+dst_y) * dst_stride) + (dst_x * pixel_size);
+        unsafe {
+            ::std::ptr::copy_nonoverlapping(
+                src.as_ptr().add(src_offset),
+                dst.as_mut_ptr().add(dst_offset),
+                src_stride
+            );
+        }
+    }
+}
+
+pub fn copy_sprite_premultiply_alpha(
+    dst: &mut [u8], dst_x: usize, dst_y: usize, dst_stride: usize,
+    src: &[u8], src_stride: usize, height: usize, pixel_size: usize
+) {
+    let pixel_count = src_stride / pixel_size;
+
+    for line in 0..height {
+        let src_offset = line * src_stride;
+        let dst_offset = ((line+dst_y) * dst_stride) + (dst_x * pixel_size);
+        
+        let mut pixel_offset = 0;
+        for _ in 0..pixel_count {
+            let [mut r, mut g, mut b, a] = unsafe { std::ptr::read(src.as_ptr().add(src_offset + pixel_offset) as *const [u8; 4]) };
+            let a_f64 = a as f64 / 255.0;
+            r = ((r as f64) * a_f64) as u8;
+            g = ((g as f64) * a_f64) as u8;
+            b = ((b as f64) * a_f64) as u8;
+
+            unsafe {
+                std::ptr::write(dst.as_mut_ptr().add(dst_offset + pixel_offset) as *mut [u8; 4], [r, g, b, a]);
+            }
+            
+            pixel_offset += pixel_size;
+        }
+    }
 }
 
 pub const fn size_u32(width: u32, height: u32) -> SizeU32 {

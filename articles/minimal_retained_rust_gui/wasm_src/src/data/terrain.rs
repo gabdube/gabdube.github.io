@@ -1,5 +1,7 @@
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use crate::{shared::AABB, store::StoreLoad};
+use crate::shared::AABB_U32;
+use crate::store::StoreLoad;
+
 
 // This value is also hardcoded in the terrain shaders
 pub const TERRAIN_SPRITE_SIZE: f32 = 64.0;
@@ -7,6 +9,7 @@ pub const TERRAIN_SPRITE_SIZE: f32 = 64.0;
 #[derive(Copy, Clone, TryFromBytes, IntoBytes, Immutable)]
 #[repr(u8)]
 pub enum TerrainCell {
+    Water=0,
     Grass,
 }
 
@@ -22,7 +25,7 @@ impl Terrain {
     pub(super) fn init(&mut self, width: u32, height: u32) {
         self.width = width;
         self.height = height;
-        self.cells = vec![TerrainCell::Grass; (width*height) as usize];
+        self.cells = vec![TerrainCell::Water; (width*height) as usize];
     }
 
     pub const fn cell_count(&self) -> usize {
@@ -37,11 +40,28 @@ impl Terrain {
         self.height
     }
 
-    pub const fn rect(&self) -> AABB {
-        AABB { 
-            left: 0.0, top: 0.0,
-            right: self.width as f32 * TERRAIN_SPRITE_SIZE,
-            bottom: self.height as f32 * TERRAIN_SPRITE_SIZE
+    pub fn get_cell(&self, x_index: usize, y_index: usize) -> TerrainCell {
+        let width = self.width as usize;
+        let x_index = usize::min(x_index, width-1);
+        let y_index = usize::min(y_index, (self.height as usize) - 1);
+        let index = (y_index*width) + x_index;
+        match self.cells.get(index) {
+            Some(cell) => *cell,
+            None => unsafe { std::hint::unreachable_unchecked() } // index will always be in range
+        }
+    }
+
+    pub fn paint_rect(&mut self, cell_type: TerrainCell, mut rect: AABB_U32) {
+        rect.right = u32::min(rect.right, self.width);
+        rect.bottom = u32::min(rect.bottom, self.height);
+
+        let width = self.width;
+
+        for y in rect.top..rect.bottom {
+            for x in rect.left..rect.right {
+                let index = ((y*width) + x) as usize;
+                self.cells[index] = cell_type;
+            }
         }
     }
 

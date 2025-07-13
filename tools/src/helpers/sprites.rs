@@ -10,6 +10,10 @@ pub enum LoadSpriteParams {
 
 impl LoadSpriteParams {
 
+    pub fn crop(left: u32, top: u32, right: u32, bottom: u32) -> Self {
+        LoadSpriteParams::Crop(RectU32 { left, top, right, bottom })
+    }
+
     pub fn from_crop_args(args: &[&str]) -> Option<LoadSpriteParams> {
         let left = args.get(0).and_then(|&arg| arg.parse::<u32>().ok() );
         let top = args.get(1).and_then(|&arg| arg.parse::<u32>().ok() );
@@ -78,6 +82,27 @@ impl SpriteData {
         sprite
     }
 
+    pub fn load_from_sprite_data(data: &SpriteData, params: LoadSpriteParams, padding: u32) -> SpriteData {
+        let mut sprite = SpriteData::default();
+        match params {
+            LoadSpriteParams::Auto => {
+                sprite.frame_size = data.frame_size;
+                sprite.size = data.size;
+                sprite.pixels = data.pixels.clone();
+            },
+            LoadSpriteParams::Crop(src_rect) => {
+                let line_size = (data.frame_size.width as usize) * PIXEL_SIZE;
+                optimize_simple_sprite(line_size, &src_rect, &data.pixels, &mut sprite.size, &mut sprite.pixels, padding);
+                sprite.frame_size = sprite.size;
+            },
+            LoadSpriteParams::Animation { .. } => {
+                unimplemented!();
+            }
+        }
+
+        sprite
+    }
+
     pub fn sprite_count(&self) -> u32 {
         self.size.width / self.frame_size.width
     }
@@ -126,8 +151,8 @@ fn optimize_sprite_rect(
 
     rect.left = i32::max(rect.left, 0);
     rect.top = i32::max(rect.top, 0);
-    rect.right = i32::min(rect.right, src_rect.right as i32);
-    rect.bottom = i32::min(rect.bottom, src_rect.bottom as i32);
+    rect.right = i32::min(rect.right, src_rect.right as i32) + 1;
+    rect.bottom = i32::min(rect.bottom, src_rect.bottom as i32) + 1;
 
     *optimized_rect = rect;
 }

@@ -5,6 +5,7 @@ const ASSETS_BUNDLE = `
 TEXTURE;atlas;assets/atlas.png;
 TEXTURE;terrain;assets/terrain.png;
 CSV;atlas_sprites;assets/atlas.csv;
+CSV;terrain_sprites;assets/terrain.csv;
 SHADER;terrain;assets/terrain.vert.glsl;assets/terrain.frag.glsl;
 SHADER;sprites;assets/sprites.vert.glsl;assets/sprites.frag.glsl;
 SHADER;highlight_sprites;assets/highlight_sprites.vert.glsl;assets/highlight_sprites.frag.glsl;

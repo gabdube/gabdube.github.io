@@ -1,7 +1,8 @@
 pub mod game_state;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use crate::shared::{PositionF32, pos};
+use crate::data::terrain::{Terrain, TerrainCell};
+use crate::shared::{PositionF32, pos, aabb_u32};
 
 use super::GameClient;
 
@@ -32,11 +33,16 @@ impl crate::store::StoreLoad for GameState {
     }
 }
 
+fn paint_terrain(terrain: &mut Terrain) {
+    terrain.paint_rect(TerrainCell::Grass, aabb_u32(3, 3, 20, 12));
+}
+
 pub fn init(client: &mut GameClient) {
     let wd = &mut client.world_data;
 
     wd.reset();
     wd.initialize_terrain(32, 24);
+    paint_terrain(&mut wd.data.terrain);
 
     wd.add_castle(pos(300.0, 300.0));
     wd.add_tower(pos(650.0, 300.0));

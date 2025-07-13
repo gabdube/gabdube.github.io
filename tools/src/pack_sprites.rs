@@ -1,11 +1,11 @@
 /*!
-Usage: cargo run --release -p tools -- pack_sprites --input-csv sprites.csv --output-image test.png --output-csv test.csv --max-width 512
+Usage: cargo run --release -p tools -- pack-sprites --input-csv sprites.csv --output-image test.png --output-csv test.csv --max-width 512
 
 cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 712
 */
 
 use std::collections::HashMap;
-use crate::helpers::{self, LoadSpriteParams, SpriteData, SpritePackingHelper};
+use crate::helpers::{PackSprite, LoadSpriteParams, SpriteData, SpritePackingHelper};
 use crate::shared;
 
 const PIXEL_SIZE: usize = 4; // rbga u8
@@ -55,6 +55,11 @@ fn args() -> Option<PackSpriteArgs> {
         }
     };
 
+    if input_csv.is_empty() {
+        eprintln!("Input csv file is empty");
+        return None;
+    }
+
     let output_image_dst: String = match crate::shared::get_arg("--output-image") {
         Some(value) => value,
         None => {
@@ -86,14 +91,6 @@ fn args() -> Option<PackSpriteArgs> {
     })
 }
 
-fn load_cached<'a>(cache: &'a mut HashMap<String, shared::PngFile>, path: String) -> &'a shared::PngFile {
-    if !cache.contains_key(&path) {
-        cache.insert(path.clone(), shared::load_png(&path));
-    }
-
-    cache.get(&path).unwrap()
-}
-
 fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
     let mut image_cache: HashMap<String, shared::PngFile> = HashMap::new();
     let mut errors: Vec<String> = Vec::new();
@@ -115,7 +112,7 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
 
         let name = args[0].to_string();
         let path = args[1].to_string();
-        let image = load_cached(&mut image_cache, path);
+        let image = shared::load_cached(&mut image_cache, path);
 
         let ty = match args[2] {
             "auto" => LoadSpriteParams::Auto,
@@ -134,7 +131,7 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
                 }
             }
             other => {
-                errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be one of [\"auto\", \"crop\"]"));
+                errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be one of [\"auto\", \"crop\", \"animation\"]"));
                 return;
             }
         };
@@ -171,10 +168,10 @@ fn check_min_size(state: &PackSpriteState) -> bool {
     return true;
 }
 
-fn generate_pack_sprites(state: &PackSpriteState) -> Vec<helpers::PackSprite> {
+fn generate_pack_sprites(state: &PackSpriteState) -> Vec<PackSprite> {
     state.input_sprites.iter().enumerate()
         .map(|(index, sprite)| 
-            helpers::PackSprite { 
+            PackSprite { 
                 index: index as u32,
                 size: sprite.data.size,
                 rect: Default::default()
@@ -183,7 +180,7 @@ fn generate_pack_sprites(state: &PackSpriteState) -> Vec<helpers::PackSprite> {
         .collect()
 }
 
-fn allocate_output_image(state: &mut PackSpriteState, pack: &helpers::SpritePackingHelper) {
+fn allocate_output_image(state: &mut PackSpriteState, pack: &SpritePackingHelper) {
     let size = pack.size();
     let dst_stride = size.width as usize * PIXEL_SIZE;
     let total_image_size = size.height as usize * dst_stride;
@@ -192,57 +189,13 @@ fn allocate_output_image(state: &mut PackSpriteState, pack: &helpers::SpritePack
     state.output_image_pixels = vec![0; total_image_size];
 }
 
-fn copy_pack_sprites_to_state(state: &mut PackSpriteState, pack: &helpers::SpritePackingHelper) {
+fn copy_pack_sprites_to_state(state: &mut PackSpriteState, pack: &SpritePackingHelper) {
     for packed_sprite in pack.sprites() {
         state.input_sprites[packed_sprite.index as usize].output_rect = packed_sprite.rect;
     }
 }
 
 fn copy_sprites_to_output_image(state: &mut PackSpriteState) {
-    fn copy_sprite(
-        dst: &mut [u8], dst_x: usize, dst_y: usize, dst_stride: usize,
-        src: &[u8], src_stride: usize, height: usize
-    ) {
-        for line in 0..height {
-            let src_offset = line * src_stride;
-            let dst_offset = ((line+dst_y) * dst_stride) + (dst_x * PIXEL_SIZE);
-            unsafe {
-                ::std::ptr::copy_nonoverlapping(
-                    src.as_ptr().add(src_offset),
-                    dst.as_mut_ptr().add(dst_offset),
-                    src_stride
-                );
-            }
-        }
-    }
-
-    fn copy_sprite_premultiply_alpha(
-        dst: &mut [u8], dst_x: usize, dst_y: usize, dst_stride: usize,
-        src: &[u8], src_stride: usize, height: usize
-    ) {
-        let pixel_count = src_stride / PIXEL_SIZE;
-
-        for line in 0..height {
-            let src_offset = line * src_stride;
-            let dst_offset = ((line+dst_y) * dst_stride) + (dst_x * PIXEL_SIZE);
-            
-            let mut pixel_offset = 0;
-            for _ in 0..pixel_count {
-                let [mut r, mut g, mut b, a] = unsafe { std::ptr::read(src.as_ptr().add(src_offset + pixel_offset) as *const [u8; 4]) };
-                let a_f64 = a as f64 / 255.0;
-                r = ((r as f64) * a_f64) as u8;
-                g = ((g as f64) * a_f64) as u8;
-                b = ((b as f64) * a_f64) as u8;
-
-                unsafe {
-                    std::ptr::write(dst.as_mut_ptr().add(dst_offset + pixel_offset) as *mut [u8; 4], [r, g, b, a]);
-                }
-                
-                pixel_offset += PIXEL_SIZE;
-            }
-        }
-    }
-
     let dst_stride = state.output_image_size.width as usize * PIXEL_SIZE;
     let dst_bytes = &mut state.output_image_pixels;
 
@@ -254,14 +207,16 @@ fn copy_sprites_to_output_image(state: &mut PackSpriteState) {
         let src_stride = sprite.data.line_size();
 
         if state.premultiply_alpha {
-            copy_sprite_premultiply_alpha(
+            shared::copy_sprite_premultiply_alpha(
                 dst_bytes, dst_x, dst_y, dst_stride,
                 &sprite.data.pixels, src_stride, height,
+                PIXEL_SIZE,
             );
         } else {
-            copy_sprite(
+            shared::copy_sprite(
                 dst_bytes, dst_x, dst_y, dst_stride,
                 &sprite.data.pixels, src_stride, height,
+                PIXEL_SIZE,
             );
         }
     }

@@ -1,6 +1,7 @@
 mod shared;
 mod helpers;
 mod pack_sprites;
+mod pack_terrain;
 
 fn command_name() -> Option<String> {
     ::std::env::args().skip(1).next()
@@ -19,6 +20,7 @@ fn main() {
 
     match cmd.as_str() {
         "pack-sprites" => { pack_sprites::run(); },
+        "pack-terrain" => { pack_terrain::run(); },
         _ => {
             eprintln!("Unknown command name {:?}", cmd);
         }
