@@ -19,6 +19,9 @@ use behaviour::BehaviourState;
 pub mod world;
 use world::World;
 
+mod extra;
+
+use fnv::FnvHashMap;
 use crate::shared::{pos, PositionF32, SizeF32};
 
 const ANIMATION_INTERVAL: f64 = 1000.0 / 16.0; // 16fps
@@ -31,6 +34,7 @@ pub struct CommonParams {
 
     // Flags
     pub render_flags: base::RenderFlags,
+    pub debug_flags: base::DebugFlags,
 
     // Global parameters
     pub view_size: SizeF32,
@@ -43,6 +47,7 @@ pub struct CommonParams {
     pub mouse_position: PositionF32,
     pub mouse_position_gui: PositionF32,
     pub mouse_buttons: [base::ButtonState; 3],
+    pub keys: FnvHashMap<base::keys::Key, base::ButtonState>,
 }
 
 impl CommonParams {
@@ -60,6 +65,12 @@ impl CommonParams {
         } else {
             None
         }
+    }
+
+    pub fn key_just_pressed(&self, key: base::keys::Key) -> bool {
+        self.keys.get(&key).copied()
+            .unwrap_or(base::ButtonState::Released)
+            .just_pressed()
     }
 }
 
@@ -120,6 +131,17 @@ impl GameWorldData {
         }
     }
 
+    pub fn update_key(&mut self, key: &str, pressed: bool) {
+        let button_state = match pressed {
+            true => base::ButtonState::JustPressed,
+            false => base::ButtonState::JustReleased,
+        };
+
+        if let Some(key) = base::keys::Key::from_str(key) {
+            self.data.common.keys.insert(key, button_state);
+        }
+    }
+
     /// Mouse position in world coordinates. Ie: relative to the world view offset
     pub fn world_mouse_position(&self) -> PositionF32 {
         let mouse_position = self.data.common.mouse_position;
@@ -153,12 +175,37 @@ impl GameWorldData {
         data.debug.clear();
     }
 
+    pub fn handle_global_inputs(&mut self) {
+        let common = &mut self.data.common;
+        if common.key_just_pressed(base::keys::KEY_DIGIT_1) {
+            common.debug_flags.toggle(base::DebugFlags::DEBUG_WORLD_GRID);
+        }
+
+        if common.key_just_pressed(base::keys::KEY_DIGIT_2) {
+            common.debug_flags.toggle(base::DebugFlags::DEBUG_DISPLAY_GRID);
+        }
+    }
+
+    pub fn global_updates(&mut self) {
+        let debug = self.data.common.debug_flags;
+        if debug.debug_world_grid() {
+            extra::debug_world_grid(&mut self.data);
+        }
+        if debug.debug_display_grid() {
+            extra::debug_display_grid(&mut self.data);
+        }
+    }
+
     pub fn finalize_update(&mut self) {
         let c = &mut self.data.common;
         c.mouse_buttons[0].flip();
         c.mouse_buttons[1].flip();
         c.mouse_buttons[2].flip();
         c.mouse_position_old = c.mouse_position;
+
+        for key_state in c.keys.values_mut() {
+            key_state.flip();
+        }
     }
 
     pub fn add_castle(&mut self, position: PositionF32) { 
@@ -217,6 +264,7 @@ impl crate::store::StoreLoad for CommonParams {
 
     fn store(&mut self, writer: &mut crate::store::StoreWriter) {
         writer.write(&self.render_flags);
+        writer.write(&self.debug_flags);
 
         writer.write(&self.view_size);
         writer.write(&self.view_offset);
@@ -232,6 +280,7 @@ impl crate::store::StoreLoad for CommonParams {
         let mut params = CommonParams::default();
 
         params.render_flags = reader.try_read()?;
+        params.debug_flags = reader.try_read()?;
 
         params.view_size = reader.try_read()?;
         params.view_offset = reader.try_read()?;
@@ -255,6 +304,7 @@ impl Default for CommonParams {
             time_delta: 0.0,
 
             render_flags: base::RenderFlags(0),
+            debug_flags: base::DebugFlags(0),
 
             view_size: SizeF32 { width: 0.0, height: 0.0 },
             view_offset: pos(0.0, 0.0),
@@ -265,6 +315,7 @@ impl Default for CommonParams {
             mouse_position: pos(0.0, 0.0),
             mouse_position_gui: pos(0.0, 0.0),
             mouse_buttons: [base::ButtonState::default(); 3],
+            keys: FnvHashMap::default()
         }
     }
 }

@@ -80,6 +80,7 @@ impl GameClient {
         use state::GameStateValue::*;
 
         self.world_data.prepare_update(time);
+        self.world_data.handle_global_inputs();
 
         match self.state.value {
             Uninitialized => {
@@ -91,6 +92,7 @@ impl GameClient {
         }
 
         self.world_data.run_behaviours();
+        self.world_data.global_updates();
         self.world_data.finalize_update();
 
         output::GameOutput::update(self);
@@ -116,6 +118,7 @@ impl GameClient {
     }
 
     pub fn update_keys(&mut self, key_name: &str, pressed: bool) {
+        self.world_data.update_key(key_name, pressed);
     }
 }
 

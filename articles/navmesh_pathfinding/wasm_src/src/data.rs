@@ -23,7 +23,7 @@ use navigation::NavigationState;
 pub mod debug;
 use debug::DebugState;
 
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 use crate::shared::{PositionF32, SizeF32, pos, size};
 use crate::store::StoreLoad;
 
@@ -46,7 +46,7 @@ pub struct CommonParams {
     pub zoom: f32,
 
     pub mouse_buttons: [base::ButtonState; 3],
-    pub keys: HashMap<String, base::ButtonState>,
+    pub keys: FnvHashMap<String, base::ButtonState>,
 
     pub total_sprites: u32,
 }
@@ -104,7 +104,7 @@ impl Default for CommonParams {
             zoom: 1.0,
 
             mouse_buttons: [base::ButtonState::default(); 3],
-            keys: HashMap::default(),
+            keys: FnvHashMap::default(),
 
             total_sprites: 0,
         }
