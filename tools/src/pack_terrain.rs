@@ -4,7 +4,7 @@ Usage: cargo run --release -p tools -- pack-terrain --input-csv sprites.csv --ou
 cargo run --release -p tools -- pack-terrain --input-csv "tools/unprocessed_assets/tinysword_terrain.csv" --output-image "articles/minimal_retained_rust_gui/assets/terrain.png" --output-csv "articles/minimal_retained_rust_gui/assets/terrain.csv"
 */
 use std::collections::HashMap;
-use crate::helpers::{SpriteData, LoadSpriteParams, CombinedTilemap, InputTilemapTypes, ReducedTilemap, BackgroundTile};
+use crate::helpers::{SpriteData, LoadSpriteParams, CombinedTilemap, InputTilemapTypes, DualTilemap, BackgroundTile};
 use crate::shared;
 
 struct PackWorldArgs {
@@ -81,6 +81,8 @@ fn parse_string_with_error<T: ::std::str::FromStr>(
 }
 
 fn load_sprites(args: PackWorldArgs) -> Option<PackTerrainState> {
+    const NO_PADDING: u32 = 0;
+    
     let mut image_cache: HashMap<String, shared::PngFile> = HashMap::new();
     let mut errors: Vec<String> = Vec::new();
     let mut line_number = 0;
@@ -91,8 +93,6 @@ fn load_sprites(args: PackWorldArgs) -> Option<PackTerrainState> {
         tilemap_inputs: Vec::with_capacity(8),
         ..Default::default()
     };
-
-    const NO_PADDING: u32 = 0;
 
     shared::split_csv::<7, _>(&args.input_csv, |args| {
         if args.len() < 3 {
@@ -109,7 +109,7 @@ fn load_sprites(args: PackWorldArgs) -> Option<PackTerrainState> {
                 let background_tile = BackgroundTile::new(name, SpriteData::load_from_png(&image, LoadSpriteParams::Auto, NO_PADDING));
                 state.tilemap_inputs.push(InputTilemapTypes::Background(background_tile));
             },
-            "reduced" => {
+            "dual" => {
                 let v0: Option<u32> = parse_string_with_error(args.get(3), line_number, "Missing tile size parameter", &mut errors);
                 let v1: Option<u32> = parse_string_with_error(args.get(4), line_number, "Missing offset left parameter", &mut errors);
                 let v2: Option<u32> = parse_string_with_error(args.get(5), line_number, "Missing offset top parameter", &mut errors);
@@ -119,19 +119,19 @@ fn load_sprites(args: PackWorldArgs) -> Option<PackTerrainState> {
                 };
 
                 let offset_right = offset_left + (tile_size * 4);
-                let offset_bottom = offset_top + (tile_size * 5);
+                let offset_bottom = offset_top + (tile_size * 4);
                 let sprite_params = LoadSpriteParams::crop(offset_left, offset_top, offset_right, offset_bottom);
 
-                let reduced_tilemap = ReducedTilemap {
+                let dual_tilemap = DualTilemap {
                     name,
                     data: SpriteData::load_from_png(&image, sprite_params, NO_PADDING),
                     tile_size,
                 };
 
-                state.tilemap_inputs.push(InputTilemapTypes::Reduced(reduced_tilemap));
+                state.tilemap_inputs.push(InputTilemapTypes::Dual(dual_tilemap));
             },
             other => {
-                errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be [\"reduced\", \"background\"]"));
+                errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be [\"dual\", \"background\"]"));
                 return;
             }
         };

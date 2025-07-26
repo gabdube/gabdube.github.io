@@ -6,6 +6,7 @@ const BASE_SPRITES_CAPACITY = 1024 * 2;
 const BASE_SPRITES_HIGHLIGHT_CAPACITY = 1024;
 const BASE_TERRAIN_CAPACITY = 1024 * 10;
 const BASE_DEBUG_CAPACITY = 1024 * 10;
+const TILE_SIZE = 64;
 
 class RendererCanvas {
     container: HTMLElement;
@@ -46,8 +47,10 @@ class Terrain {
     attributes_size_bytes: number;
     attributes_capacity_bytes: number;
     texture: WebGLTexture;
-    instance_count: number;
-    vao: WebGLVertexArrayObject;
+    background_instance_count: number;
+    foreground_instance_count: number;
+    background_vao: WebGLVertexArrayObject;
+    foreground_vao: WebGLVertexArrayObject;
 }
 
 interface SpritesDraw {
@@ -199,14 +202,16 @@ export class Renderer {
 
         const offset = message.offset_bytes();
         const size = message.size_bytes();
-        this.terrain.instance_count = message.cell_count();
+        this.terrain.background_instance_count = message.background_cell_count();
+        this.terrain.foreground_instance_count = message.foreground_cell_count();
 
-        ctx.bindVertexArray(this.terrain.vao);
+        ctx.bindVertexArray(this.terrain.background_vao);
 
         if (size > this.terrain.attributes_capacity_bytes) {
             realloc_terrain(ctx, this.terrain, size)
-            this.setup_terrain_vao();
         }
+
+        this.setup_terrain_vao();
 
         this.terrain.attributes_size_bytes = size;
 
@@ -454,13 +459,24 @@ export class Renderer {
         const SPRITE_INDEX_COUNT: number = 6;
         const ctx = this.ctx;
 
-        if (this.terrain.instance_count > 0) {
+        if (this.terrain.background_instance_count > 0 || this.terrain.foreground_instance_count > 0) {
+            const terrain_tile_offset = this.shaders.terrain_uniforms[2];
+
             ctx.useProgram(this.shaders.terrain);
             ctx.activeTexture(ctx.TEXTURE0);
-
             ctx.bindTexture(ctx.TEXTURE_2D, this.terrain.texture);
-            ctx.bindVertexArray(this.terrain.vao);
-            ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, this.terrain.instance_count);
+
+            if (this.terrain.background_instance_count > 0) {
+                ctx.uniform2fv(terrain_tile_offset, [0.0, 0.0]);
+                ctx.bindVertexArray(this.terrain.background_vao);
+                ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, this.terrain.background_instance_count);
+            }
+
+            if (this.terrain.foreground_instance_count > 0) {
+                ctx.uniform2fv(terrain_tile_offset, [TILE_SIZE / 2, TILE_SIZE / 2]);
+                ctx.bindVertexArray(this.terrain.foreground_vao);
+                ctx.drawElementsInstanced(ctx.TRIANGLES, SPRITE_INDEX_COUNT, ctx.UNSIGNED_SHORT, 0, this.terrain.foreground_instance_count);
+            }
         }
     }
 
@@ -639,8 +655,8 @@ export class Renderer {
         const shaders = this.shaders;
 
         const terrain = build_shader(ctx, assets, "terrain",
-            ["in_position", "in_instance_position", "in_instance_texcoord"],
-            ["view_position", "view_size"]
+            ["in_position", "in_instance_data"],
+            ["view_position", "view_size", "sprite_position_offset"]
         );
         if (terrain) {
             shaders.terrain = terrain.program;
@@ -707,28 +723,31 @@ export class Renderer {
 
     private setup_terrain_vao() {
         const TERRAIN_VERTEX_SIZE = 8;
-        const TERRAIN_SPRITE_SIZE = 16;
+        const TERRAIN_INSTANCE_DATA_SIZE = 4;
         const ctx = this.ctx;
-        const [position, instance_position, instance_texcoord] = this.shaders.terrain_attributes;
+        const [position, instance_data] = this.shaders.terrain_attributes;
 
-        ctx.bindVertexArray(this.terrain.vao);
+        const vao_data: Array<[WebGLVertexArrayObject, number]> = [
+            [this.terrain.background_vao, 0],
+            [this.terrain.foreground_vao, this.terrain.background_instance_count * TERRAIN_INSTANCE_DATA_SIZE]
+        ];
 
-        // Vertex data
-        ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.terrain.index);
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.vertex);
-        ctx.enableVertexAttribArray(position);
-        ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, TERRAIN_VERTEX_SIZE, 0);
+        for (const [vao, instance_data_offset] of vao_data) {
+            ctx.bindVertexArray(vao);
 
-        // Instance Data
-        ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
+            // Vertex data
+            ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, this.terrain.index);
+            ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.vertex);
+            ctx.enableVertexAttribArray(position);
+            ctx.vertexAttribPointer(position, 2, ctx.FLOAT, false, TERRAIN_VERTEX_SIZE, 0);
 
-        ctx.enableVertexAttribArray(instance_position);
-        ctx.vertexAttribPointer(instance_position, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 0);
-        ctx.vertexAttribDivisor(instance_position, 1);
+            // Instance Data
+            ctx.bindBuffer(ctx.ARRAY_BUFFER, this.terrain.attributes);
 
-        ctx.enableVertexAttribArray(instance_texcoord);
-        ctx.vertexAttribPointer(instance_texcoord, 2, ctx.FLOAT, false, TERRAIN_SPRITE_SIZE, 8);
-        ctx.vertexAttribDivisor(instance_texcoord, 1);
+            ctx.enableVertexAttribArray(instance_data);
+            ctx.vertexAttribIPointer(instance_data, 1, ctx.UNSIGNED_INT, TERRAIN_INSTANCE_DATA_SIZE, instance_data_offset);
+            ctx.vertexAttribDivisor(instance_data, 1);
+        }
 
         ctx.bindVertexArray(null);
     }
@@ -742,14 +761,16 @@ export class Renderer {
         terrain.attributes = ctx.createBuffer();
         terrain.attributes_capacity_bytes = BASE_TERRAIN_CAPACITY;
         terrain.attributes_size_bytes = 0;
-        terrain.instance_count = 0;
+        terrain.background_instance_count = 0;
+        terrain.foreground_instance_count = 0;
 
-        terrain.vao = ctx.createVertexArray();
+        terrain.background_vao = ctx.createVertexArray();
+        terrain.foreground_vao = ctx.createVertexArray();
 
         const texture_id = this.assets.textures.get("terrain")?.id as number;  // Check is handled in preload_textures
         terrain.texture = this.textures[texture_id];
 
-        ctx.bindVertexArray(terrain.vao);
+        ctx.bindVertexArray(terrain.background_vao);
 
         ctx.bindBuffer(ctx.ELEMENT_ARRAY_BUFFER, terrain.index);
         ctx.bufferData(ctx.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 3, 2, 1, 0, 3]), ctx.STATIC_DRAW);

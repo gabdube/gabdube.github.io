@@ -27,8 +27,7 @@ pub struct GpuHighlightedSprite {
 #[repr(C)]
 #[derive(Default, Copy, Clone, Immutable, IntoBytes)]
 pub struct GpuTerrainSpriteData {
-    pub position: [f32; 2],
-    pub uv: [f32; 2]
+    pub data: u32
 }
 
 /// A single vertex in the debug shader

@@ -51,8 +51,10 @@ impl AtlasData {
 }
 
 #[derive(Copy, Clone, Default, FromBytes, IntoBytes, Immutable)]
+#[repr(align(4))]
 pub struct TerrainBackgroundSprite {
-    pub offset: [f32; 2],
+    /// Offset in tiles (only first two values are used, padded to 4 bytes)
+    pub offset: [u8; 4],
 }
 
 #[derive(Default)]
@@ -73,8 +75,10 @@ impl TerrainSprites {
 
         let name = args[0];
         let offset = [
-            parse_u32(args.get(1)) as f32,
-            parse_u32(args.get(2)) as f32
+            (parse_u32(args.get(1)) / self.tile_size) as u8,
+            (parse_u32(args.get(2)) / self.tile_size) as u8,
+            0,
+            0
         ];
 
         match name {

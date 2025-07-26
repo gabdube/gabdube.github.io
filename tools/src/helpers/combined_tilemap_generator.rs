@@ -2,20 +2,20 @@ use crate::{helpers::PIXEL_SIZE, shared};
 use super::{SpriteData, LoadSpriteParams};
 
 pub const TILE_TYPE_BACKGROUND: u16 = 1;
-pub const TILE_TYPE_REDUCED: u16 = 2;
+pub const TILE_TYPE_DUAL: u16 = 2;
 
 /// A tilemap in the "reduced" format
-pub struct ReducedTilemap {
+pub struct DualTilemap {
     pub name: String,
     pub data: SpriteData,
     pub tile_size: u32,
 }
 
-impl ReducedTilemap {
+impl DualTilemap {
 
     pub fn extract_background(&self) -> BackgroundTile {
         let ts = self.tile_size;
-        let [offset_left, offset_top] = [ts, ts];
+        let [offset_left, offset_top] = [2*ts, 1*ts];
 
         let crop = LoadSpriteParams::crop(offset_left, offset_top, offset_left+ts, offset_top+ts);
         let data = SpriteData::load_from_sprite_data(&self.data, crop, 0);
@@ -43,7 +43,7 @@ impl BackgroundTile {
 /// Different typemap types that can be added to a [CombinedTilemap]
 pub enum InputTilemapTypes {
     Background(BackgroundTile),
-    Reduced(ReducedTilemap),
+    Dual(DualTilemap),
 }
 
 #[derive(Copy, Clone)]
@@ -57,6 +57,7 @@ pub struct TileMapping {
 /// Generated tilemap
 pub struct CombinedTilemap {
     pub backgrounds: Vec<BackgroundTile>,
+    pub dual: Vec<DualTilemap>,
     pub tile_mapping: Vec<TileMapping>,
     pub output_image_pixels: Vec<u8>,
     pub output_image_size: shared::SizeU32,
@@ -78,12 +79,13 @@ impl CombinedTilemap {
                     self.backgrounds.push(bg);
                 }
             },
-            InputTilemapTypes::Reduced(reduced) => {
-                if self.tile_size != 0 && self.tile_size != reduced.tile_size {
-                    error = Some(format!("Mismatching tile size or {:?}. Old: {}, New: {}", reduced.name, self.tile_size, reduced.tile_size))
+            InputTilemapTypes::Dual(dual) => {
+                if self.tile_size != 0 && self.tile_size != dual.tile_size {
+                    error = Some(format!("Mismatching tile size or {:?}. Old: {}, New: {}", dual.name, self.tile_size, dual.tile_size))
                 } else {
-                    self.tile_size = reduced.tile_size;
-                    self.backgrounds.push(reduced.extract_background());
+                    self.tile_size = dual.tile_size;
+                    self.backgrounds.push(dual.extract_background());
+                    self.dual.push(dual);
                 }
             }
         }
@@ -96,8 +98,13 @@ impl CombinedTilemap {
     }
 
     fn compute_output_image_size(&mut self) {
-        let width = self.tile_size * (self.backgrounds.len() as u32);
-        let height = self.tile_size;
+        let width = self.tile_size * 4;
+        let mut height = 0;
+
+        let background_count = shared::align_up(self.backgrounds.len(), 4) as u32;
+        height += self.tile_size * (background_count / 4);
+        height += self.tile_size * ((self.dual.len() * 4) as u32);
+
         self.output_image_size = shared::size_u32(width, height);
 
         let total_pixel_size = (width as usize) * (height as usize) * PIXEL_SIZE;
@@ -107,8 +114,10 @@ impl CombinedTilemap {
     fn compute_mapping(&mut self) {
         let ts = self.tile_size;
         let mut offset_x = 0;
-        let offset_y = 0;
-        for (i, _) in self.backgrounds.iter().enumerate() {
+        let mut offset_y = 0;
+
+        // Adds background first
+        for i in 0..self.backgrounds.len() {
             self.tile_mapping.push(TileMapping { 
                 ty: TILE_TYPE_BACKGROUND,
                 data_index: i as u16,
@@ -116,6 +125,25 @@ impl CombinedTilemap {
                 offset_y
             });
             offset_x += ts;
+            if offset_x >= self.output_image_size.width {
+                offset_x = 0;
+                offset_y += ts;
+            }
+        }
+
+        if offset_x > 0 {
+            offset_y += ts;
+        }
+
+        // Then add dual tile maps
+        for i in 0..self.dual.len() {
+            self.tile_mapping.push(TileMapping {
+                ty: TILE_TYPE_DUAL,
+                offset_x: 0,
+                offset_y: offset_y,
+                data_index: i as u16
+            });
+            offset_y += ts*4;
         }
     }
 
@@ -133,8 +161,12 @@ impl CombinedTilemap {
 
                     (&bg.data.pixels, src_stride, height)
                 },
-                TILE_TYPE_REDUCED => {
-                    unimplemented!()
+                TILE_TYPE_DUAL => {
+                    let dual = &self.dual[mapping.data_index as usize];
+                    let src_stride = dual.data.frame_size.width as usize * PIXEL_SIZE;
+                    let height = dual.data.frame_size.height as usize;
+
+                    (&dual.data.pixels, src_stride, height)
                 }
                 _ => panic!("Unknown mapping type {}", mapping.ty)
             };
@@ -176,6 +208,7 @@ impl Default for CombinedTilemap {
     fn default() -> Self {
         CombinedTilemap {
             backgrounds: Vec::with_capacity(4),
+            dual: Vec::with_capacity(4),
             tile_mapping: Vec::with_capacity(32),
             output_image_pixels: Vec::new(),
             output_image_size: shared::SizeU32::default(),

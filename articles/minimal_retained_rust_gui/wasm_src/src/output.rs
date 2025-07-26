@@ -109,7 +109,7 @@ impl GameOutput {
         if output.data[output.data_offset..].len() < total_size {
             Self::realloc_data(&mut output.data, total_size);
         }
-    
+
         let instance_data_base = crate::shared::align_up(output.data_offset, 4);
         output.data_offset = instance_data_base + total_size;
 
@@ -121,7 +121,8 @@ impl GameOutput {
         let update_terrain = UpdateTerrainParams { 
             offset_bytes: instance_data_base,
             size_bytes: raster.size_bytes(),
-            cell_count: raster.cell_count(),
+            background_cell_count: raster.background_cell_count(),
+            foreground_cell_count: raster.foreground_cell_count(),
         };
 
         output.messages.push(OutputMessage { 

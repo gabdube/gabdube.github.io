@@ -6,5 +6,5 @@ pub use sprites::*;
 mod pack_sprites;
 pub use pack_sprites::*;
 
-mod tilemap_generator;
-pub use tilemap_generator::*;
+mod combined_tilemap_generator;
+pub use combined_tilemap_generator::*;

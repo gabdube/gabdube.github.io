@@ -23,13 +23,12 @@ pub struct Terrain {
 impl Terrain {
 
     pub(super) fn init(&mut self, width: u32, height: u32) {
+        assert!(width > 2 && height > 2, "Terrain min size in 2x2");
+        assert!(width <= 255 && height <= 255, "Terrain max size is 255x255");
+
         self.width = width;
         self.height = height;
         self.cells = vec![TerrainCell::Water; (width*height) as usize];
-    }
-
-    pub const fn cell_count(&self) -> usize {
-        (self.width as usize) * (self.height as usize)
     }
 
     pub const fn width(&self) -> u32 {

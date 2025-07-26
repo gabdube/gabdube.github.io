@@ -211,3 +211,9 @@ pub const fn rect_u32(left: u32, top: u32, right: u32, bottom: u32) -> RectU32 {
 pub const fn rect_i32(left: i32, top: i32, right: i32, bottom: i32) -> RectI32 {
     RectI32 { left, top, right, bottom }
 }
+
+
+#[inline(always)]
+pub fn align_up(value: usize, align: usize) -> usize {
+    (value + align - 1) & !(align - 1)
+}

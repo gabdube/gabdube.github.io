@@ -49,7 +49,12 @@ pub struct SpriteData {
 
 impl SpriteData {
 
-    pub fn load_from_png(png: &PngFile, params: LoadSpriteParams, padding: u32) -> SpriteData {
+    pub fn empty_from_size(size: SizeU32) -> Self {
+        let pixels = vec![0; (size.width as usize) * (size.height as usize) * PIXEL_SIZE ];
+        SpriteData { pixels, size, frame_size: size }
+    }
+
+    pub fn load_from_png(png: &PngFile, params: LoadSpriteParams, padding: u32) -> Self {
         let mut sprite = SpriteData::default();
 
         match params {
@@ -82,7 +87,7 @@ impl SpriteData {
         sprite
     }
 
-    pub fn load_from_sprite_data(data: &SpriteData, params: LoadSpriteParams, padding: u32) -> SpriteData {
+    pub fn load_from_sprite_data(data: &Self, params: LoadSpriteParams, padding: u32) -> Self {
         let mut sprite = SpriteData::default();
         match params {
             LoadSpriteParams::Auto => {
@@ -109,6 +114,63 @@ impl SpriteData {
 
     pub fn line_size(&self) -> usize {
         self.size.width as usize * PIXEL_SIZE
+    }
+
+    pub fn copy_pixels(&self, dst_sprite: &mut Self, src: RectU32, dst: RectU32) {
+        assert!(src.width() == dst.width() && src.height() == dst.height(), "Copy area must have the same dimensions");
+
+        let width = src.width();
+        let height = src.height();
+
+        let src_line_size = (self.frame_size.width as usize) * PIXEL_SIZE;
+        let dst_line_size = (dst_sprite.size.width as usize) * PIXEL_SIZE;
+        let copy_line_size = (width as usize) * PIXEL_SIZE;
+
+        let src_offset_left = src.left as usize;
+        let dst_offset_left = dst.left as usize;
+
+        let src_bytes = self.pixels.as_ptr();
+        let dst_bytes = dst_sprite.pixels.as_mut_ptr();
+
+        for y_offset in 0..height {
+            let src_bytes_start = ((src.top + y_offset) as usize * src_line_size) + (src_offset_left * PIXEL_SIZE);
+            let dst_bytes_start = ((dst.top + y_offset) as usize * dst_line_size) + (dst_offset_left * PIXEL_SIZE);
+            unsafe {
+                ::std::ptr::copy_nonoverlapping(
+                    src_bytes.add(src_bytes_start),
+                    dst_bytes.add(dst_bytes_start),
+                    copy_line_size
+                );
+            }
+        }
+    }
+
+    pub fn copy_pixels_self(&mut self, src: RectU32, dst: RectU32) {
+        assert!(src.width() == dst.width() && src.height() == dst.height(), "Copy area must have the same dimensions");
+
+        let width = src.width();
+        let height = src.height();
+
+        let line_size = (self.frame_size.width as usize) * PIXEL_SIZE;
+        let copy_line_size = (width as usize) * PIXEL_SIZE;
+
+        let src_offset_left = src.left as usize;
+        let dst_offset_left = dst.left as usize;
+
+        let src_bytes = self.pixels.as_ptr();
+        let dst_bytes = self.pixels.as_mut_ptr();
+
+        for y_offset in 0..height {
+            let src_bytes_start = ((src.top + y_offset) as usize * line_size) + (src_offset_left * PIXEL_SIZE);
+            let dst_bytes_start = ((dst.top + y_offset) as usize * line_size) + (dst_offset_left * PIXEL_SIZE);
+            unsafe {
+                ::std::ptr::copy_nonoverlapping(
+                    src_bytes.add(src_bytes_start),
+                    dst_bytes.add(dst_bytes_start),
+                    copy_line_size
+                );
+            }
+        }
     }
 
 }
