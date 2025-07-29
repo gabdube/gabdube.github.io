@@ -1,7 +1,7 @@
 pub mod game_state;
 
 use zerocopy_derive::{Immutable, IntoBytes, TryFromBytes};
-use crate::data::terrain::{Terrain, TerrainCell};
+use crate::data::terrain::{Terrain, BackgroundCell};
 use crate::shared::{PositionF32, pos, aabb_u32};
 
 use super::GameClient;
@@ -34,7 +34,7 @@ impl crate::store::StoreLoad for GameState {
 }
 
 fn paint_terrain(terrain: &mut Terrain) {
-    terrain.paint_rect(TerrainCell::Grass, aabb_u32(3, 3, 20, 12));
+    terrain.paint_rect(BackgroundCell::Grass, aabb_u32(3, 3, 20, 12));
 }
 
 pub fn init(client: &mut GameClient) {
@@ -52,6 +52,9 @@ pub fn init(client: &mut GameClient) {
     wd.add_knight(pos(300.0, 650.0));
 
     wd.compute_navigation();
+
+    wd.data.common.view_offset = pos(-32.0, -32.0);
+    wd.data.common.render_flags.set_update_view_offset();
 
     client.state.value = GameStateValue::Game;
 }

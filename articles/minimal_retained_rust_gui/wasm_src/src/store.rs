@@ -70,7 +70,7 @@ impl StoreWriter {
     }
 
     pub fn write_array<T: IntoBytes+Immutable>(&mut self, values: &[T]) {
-        assert!(align_of::<T>() <= MIN_ALIGN, "Data alignment must up to 4 bytes");
+        assert!(align_of::<T>() <= MIN_ALIGN, "Data alignment can only be up to 4 bytes");
 
         let values_count = values.len();
         let values_size = size_of::<T>() * values_count;

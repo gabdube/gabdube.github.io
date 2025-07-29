@@ -4,7 +4,7 @@ Usage: cargo run --release -p tools -- pack-terrain --input-csv sprites.csv --ou
 cargo run --release -p tools -- pack-terrain --input-csv "tools/unprocessed_assets/tinysword_terrain.csv" --output-image "articles/minimal_retained_rust_gui/assets/terrain.png" --output-csv "articles/minimal_retained_rust_gui/assets/terrain.csv"
 */
 use std::collections::HashMap;
-use crate::helpers::{SpriteData, LoadSpriteParams, CombinedTilemap, InputTilemapTypes, DualTilemap, BackgroundTile};
+use crate::helpers::{SpriteData, LoadSpriteParams, CombinedTilemap, InputTilemapTypes, Tilemap15Pieces, BackgroundTile};
 use crate::shared;
 
 struct PackWorldArgs {
@@ -109,7 +109,7 @@ fn load_sprites(args: PackWorldArgs) -> Option<PackTerrainState> {
                 let background_tile = BackgroundTile::new(name, SpriteData::load_from_png(&image, LoadSpriteParams::Auto, NO_PADDING));
                 state.tilemap_inputs.push(InputTilemapTypes::Background(background_tile));
             },
-            "dual" => {
+            "15pieces" => {
                 let v0: Option<u32> = parse_string_with_error(args.get(3), line_number, "Missing tile size parameter", &mut errors);
                 let v1: Option<u32> = parse_string_with_error(args.get(4), line_number, "Missing offset left parameter", &mut errors);
                 let v2: Option<u32> = parse_string_with_error(args.get(5), line_number, "Missing offset top parameter", &mut errors);
@@ -122,16 +122,16 @@ fn load_sprites(args: PackWorldArgs) -> Option<PackTerrainState> {
                 let offset_bottom = offset_top + (tile_size * 4);
                 let sprite_params = LoadSpriteParams::crop(offset_left, offset_top, offset_right, offset_bottom);
 
-                let dual_tilemap = DualTilemap {
+                let tilemap = Tilemap15Pieces {
                     name,
                     data: SpriteData::load_from_png(&image, sprite_params, NO_PADDING),
                     tile_size,
                 };
 
-                state.tilemap_inputs.push(InputTilemapTypes::Dual(dual_tilemap));
+                state.tilemap_inputs.push(InputTilemapTypes::Tilemap15Pieces(tilemap));
             },
             other => {
-                errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be [\"dual\", \"background\"]"));
+                errors.push(format!("{line_number}: Unknown sprite type {other:?}, must be [\"15pieces\", \"background\"]"));
                 return;
             }
         };

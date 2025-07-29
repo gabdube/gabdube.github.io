@@ -54,7 +54,6 @@ impl ButtonState {
     pub fn just_released(self) -> bool { self == Self::JustReleased }
     pub fn released(self) -> bool { self == Self::JustReleased || self == Self::Released }
     pub fn just_pressed(self) -> bool { self == Self::JustPressed }
-    pub fn pressed(self) -> bool { self == Self::JustPressed || self == Self::Pressed }
 }
 
 pub mod keys {

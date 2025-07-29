@@ -147,8 +147,7 @@ pub fn compile() -> String {
         &[
             ("offset_bytes", pointer_type, offset_of!(UpdateTerrainParams, offset_bytes)),
             ("size_bytes", pointer_type, offset_of!(UpdateTerrainParams, size_bytes)),
-            ("background_cell_count", pointer_type, offset_of!(UpdateTerrainParams, background_cell_count)),
-            ("foreground_cell_count", pointer_type, offset_of!(UpdateTerrainParams, foreground_cell_count)),
+            ("cell_count", pointer_type, offset_of!(UpdateTerrainParams, cell_count)),
         ],
     );
 

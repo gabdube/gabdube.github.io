@@ -1,4 +1,5 @@
-use crate::data::{assets::TerrainSprites, terrain::{Terrain, TerrainCell}};
+use crate::data::assets::{TerrainSprites, Terrain15PiecesMask};
+use crate::data::terrain::{Terrain, BackgroundCell, ForegroundCell};
 use super::gpu_shared::GpuTerrainSpriteData;
 
 /**
@@ -18,80 +19,48 @@ impl<'a> TerrainMeshRasterizer<'a> {
         }
     }
 
-    pub const fn background_cell_count(&self) -> usize {
-        let width = self.terrain.width() as usize;
-        let height = self.terrain.height() as usize;
-        width * height
+    pub const fn max_cell_count(&self) -> usize {
+        let [width, height] = self.terrain.inner_size().splat();
+        (width as usize) * (height as usize) * 4
     }
 
-    pub const fn foreground_cell_count(&self) -> usize {
-        let width = (self.terrain.width() - 1) as usize;
-        let height = (self.terrain.height() - 1) as usize;
-        width * height
+    pub fn max_size_bytes(&self) -> usize {
+        self.max_cell_count() * size_of::<GpuTerrainSpriteData>()
     }
 
-    pub const fn cell_count(&self) -> usize {
-        self.background_cell_count() + self.foreground_cell_count()
+    fn mask_for_tilemap15(base: BackgroundCell, background: [BackgroundCell; 4]) -> Terrain15PiecesMask {
+        let mut mask = Terrain15PiecesMask::default();
+        if base == background[0] { mask |= Terrain15PiecesMask::TOP_LEFT; }
+        if base == background[1] { mask |= Terrain15PiecesMask::TOP_RIGHT; }
+        if base == background[2] { mask |= Terrain15PiecesMask::BOTTOM_LEFT; }
+        if base == background[3] { mask |= Terrain15PiecesMask::BOTTOM_RIGHT; }
+        mask
     }
 
-    pub fn size_bytes(&self) -> usize {
-        self.cell_count() * size_of::<GpuTerrainSpriteData>()
-    }
-
-    fn get_cell_uv(&self, x: usize, y: usize) -> [u8; 2] {
-        let [x, y, _, _] = match self.terrain.get_cell(x, y) {
-            TerrainCell::Grass => self.sprites.grass.offset,
-            TerrainCell::Water => self.sprites.water.offset,
-        };
-
-        [x, y]
-    }
-
-    pub fn generate_instances(&self, output: &mut [u8]) {
-        self.generate_background_instances(output);
-        self.generate_foreground_instances(output);
-    }
-
-    pub fn generate_background_instances(&self, output: &mut [u8]) {
-        let (_, instances, _) = unsafe { output.align_to_mut::<GpuTerrainSpriteData>() };
-        let background_instance_offset = 0;
-        let height = self.terrain.height() as usize;
-        let width = self.terrain.width() as usize;
-
-        for y in 0..height {
-            for x in 0..width {
-                let offset = (y * width) + x;
-                let [uv_x, uv_y] = self.get_cell_uv(x, y);
-
-                let mut data = 0u32;
-                data += (x as u32) << 24;
-                data += (y as u32) << 16;
-                data += (uv_x as u32) << 8;
-                data += uv_y as u32;
-
-                instances[background_instance_offset + offset] = GpuTerrainSpriteData { data };
-            }
+    fn get_cell_texcoord(&self, cell: ForegroundCell, base: BackgroundCell) -> [u8; 2] {
+        match base {
+            BackgroundCell::Water => self.sprites.water.base_offset(),
+            BackgroundCell::Grass => self.sprites.grass.get_offset_from_mask(Self::mask_for_tilemap15(base, cell.background)),
+            BackgroundCell::Last => self.sprites.missing.base_offset(),
         }
     }
 
-    pub fn generate_foreground_instances(&self, output: &mut [u8]) {
+    pub fn generate_instances(&self, output: &mut [u8]) -> usize {
         let (_, instances, _) = unsafe { output.align_to_mut::<GpuTerrainSpriteData>() };
-        let background_instance_offset = self.background_cell_count();
-        let height = self.terrain.height() as usize - 1;
-        let width = self.terrain.width() as usize - 1;
+        let mut offset = 0;
+        for cell in self.terrain.inner_cells() {
+            let [x, y] = cell.position;
+            let (count, unique) = cell.unique_background_cells();
 
-        for y in 0..height {
-            for x in 0..width {
-                let offset = (y * width) + x;
-                let mut data = 0u32;
-                data += (x as u32) << 24;
-                data += (y as u32) << 16;
-                data += (1 as u32) << 8;
-                data += 0 as u32;
-
-                instances[background_instance_offset + offset] = GpuTerrainSpriteData { data };
+            for &background in unique[0..count].iter() {
+                let [tx, ty] = self.get_cell_texcoord(cell, background);
+                let data = (x as u32) << 24 | (y as u32) << 16 | (tx as u32) << 8 | (ty as u32);
+                instances[offset] = GpuTerrainSpriteData { data };
+                offset += 1;
             }
         }
+
+        offset
     }
 
 }

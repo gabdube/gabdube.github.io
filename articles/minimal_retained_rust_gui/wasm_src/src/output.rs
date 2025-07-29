@@ -100,12 +100,14 @@ impl GameOutput {
     }
 
     fn update_terrain(client: &mut GameClient) {
+        use gpu_shared::GpuTerrainSpriteData;
+
         let data = &client.world_data.data;
         let output = &mut client.output;
         let raster = TerrainMeshRasterizer::new(&data.assets.terrain, &data.terrain);
 
         // Preallocating sprite instances
-        let total_size = raster.size_bytes();
+        let total_size = raster.max_size_bytes();
         if output.data[output.data_offset..].len() < total_size {
             Self::realloc_data(&mut output.data, total_size);
         }
@@ -115,14 +117,13 @@ impl GameOutput {
 
         // Generate data
         let (_, instance_data) = output.data.split_at_mut(instance_data_base);
-        raster.generate_instances(instance_data);
+        let cell_count = raster.generate_instances(instance_data);
 
         // Message
         let update_terrain = UpdateTerrainParams { 
             offset_bytes: instance_data_base,
-            size_bytes: raster.size_bytes(),
-            background_cell_count: raster.background_cell_count(),
-            foreground_cell_count: raster.foreground_cell_count(),
+            size_bytes: cell_count * size_of::<GpuTerrainSpriteData>(),
+            cell_count,
         };
 
         output.messages.push(OutputMessage { 

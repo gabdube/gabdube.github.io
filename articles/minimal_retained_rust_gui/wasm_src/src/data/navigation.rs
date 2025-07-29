@@ -137,8 +137,9 @@ impl NavigationState {
 
     fn terrain_points(terrain: &super::Terrain, points: &mut Vec<Point>) {
         let cell_size = super::terrain::TERRAIN_SPRITE_SIZE;
-        let w = (terrain.width() as f32) * cell_size;
-        let h = (terrain.height() as f32) * cell_size;
+        let size = terrain.size();
+        let w = (size.width as f32) * cell_size;
+        let h = (size.height as f32) * cell_size;
         points.push(pos(0.0, 0.0));
         points.push(pos(w, 0.0));
         points.push(pos(0.0, h));

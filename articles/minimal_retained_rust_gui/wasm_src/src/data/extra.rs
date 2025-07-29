@@ -20,9 +20,9 @@ fn debug_grid(data: &mut super::GameData, is_display: bool) {
     }
 
     let debug = &mut data.debug;
-    let terrain = &data.terrain;
-    let terrain_width = (terrain.width() as f32 * sprite_size) - offset_base;
-    let terrain_height = (terrain.height() as f32 * sprite_size) - offset_base;
+    let size = data.terrain.size();
+    let terrain_width = (size.width as f32 * sprite_size) - offset_base;
+    let terrain_height = (size.height as f32 * sprite_size) - offset_base;
 
     let mut count = offset_base;
     while count <= terrain_width {

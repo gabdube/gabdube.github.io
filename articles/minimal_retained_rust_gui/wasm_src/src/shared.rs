@@ -68,6 +68,19 @@ pub struct SizeF32 {
     pub height: f32,
 }
 
+#[derive(Default, Debug, Copy, Clone, PartialEq, PartialOrd, FromBytes, IntoBytes, Immutable)]
+#[repr(C)]
+pub struct SizeU32 {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl SizeU32 {
+    pub const fn splat(&self) -> [u32; 2] {
+        [self.width, self.height]
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Default, FromBytes, IntoBytes, Immutable)]
 pub struct AABB {
     pub left: f32,
@@ -123,12 +136,19 @@ pub struct AABB_U32 {
 // Helpers method
 //
 
+pub fn parse_f32(v: Option<&&str>) -> f32 { v.and_then(|&val| str::parse::<f32>(val).ok() ).unwrap_or(0.0) }
+pub fn parse_u32(v: Option<&&str>) -> u32 { v.and_then(|&val| str::parse::<u32>(val).ok() ).unwrap_or(0) }
+
 pub const fn pos(x: f32, y: f32) -> PositionF32 {
     PositionF32 { x, y }
 }
 
 pub const fn size(width: f32, height: f32) -> SizeF32 {
     SizeF32 { width, height }
+}
+
+pub const fn size_u32(width: u32, height: u32) -> SizeU32 {
+    SizeU32 { width, height }
 }
 
 pub const fn aabb(position: PositionF32, size: SizeF32) -> AABB {

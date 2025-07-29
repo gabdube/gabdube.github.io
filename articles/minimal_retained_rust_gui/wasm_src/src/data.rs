@@ -307,7 +307,7 @@ impl Default for CommonParams {
             debug_flags: base::DebugFlags(0),
 
             view_size: SizeF32 { width: 0.0, height: 0.0 },
-            view_offset: pos(0.0, 0.0),
+            view_offset: pos(0.0, -1.0),
             zoom: 1.0,
             total_sprites: 0,
 

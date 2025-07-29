@@ -25,8 +25,7 @@ pub struct DrawSpritesParams {
 pub struct UpdateTerrainParams {
     pub offset_bytes: usize,
     pub size_bytes: usize,
-    pub background_cell_count: usize,
-    pub foreground_cell_count: usize,
+    pub cell_count: usize,
 }
 
 #[repr(C)]
