@@ -198,6 +198,8 @@ export class Renderer {
 
         if (display_width == 0.0 || display_height == 0.0) {
             this.visible = false;
+            canvas.width = 0.0;
+            canvas.height = 0.0;
             return false;
         }
 
@@ -471,7 +473,7 @@ export class Renderer {
             return gui.vao_pool[vao_index];
         }
 
-        function upload_data(ctx: WebGL2RenderingContext, gui: Gui, index: ArrayBuffer, vertex: ArrayBuffer) {
+        function upload_data(ctx: WebGL2RenderingContext, gui: Gui, index: Uint8Array, vertex: Uint8Array) {
             if (gui.index_offset + index.byteLength > gui.index_capacity) {
                 const new_capacity = index.byteLength + ((BASE_GUI_CAPACITY * 1.5) | 0);
                 
@@ -1273,7 +1275,7 @@ function create_texture_rgba(ctx: WebGL2RenderingContext, cpu_texture: Texture):
     return texture;
 }
 
-function create_texture_rgba_from_bytes(ctx: WebGL2RenderingContext, width: number, height: number, data: ArrayBuffer): WebGLTexture {
+function create_texture_rgba_from_bytes(ctx: WebGL2RenderingContext, width: number, height: number, data: Uint8Array): WebGLTexture {
     const texture = ctx.createTexture();
     ctx.bindTexture(ctx.TEXTURE_2D, texture);
     ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.LINEAR);
@@ -1281,7 +1283,7 @@ function create_texture_rgba_from_bytes(ctx: WebGL2RenderingContext, width: numb
     ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S, ctx.CLAMP_TO_EDGE);
     ctx.texParameterf(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T, ctx.CLAMP_TO_EDGE);
     ctx.texStorage2D(ctx.TEXTURE_2D, 1, ctx.RGBA8, width, height);
-    ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, new Uint8Array(data));
+    ctx.texSubImage2D(ctx.TEXTURE_2D, 0, 0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, data);
     return texture;
 }
 

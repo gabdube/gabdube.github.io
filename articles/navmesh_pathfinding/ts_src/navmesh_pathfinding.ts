@@ -417,57 +417,94 @@ function run(engine: Engine) {
     }
 }
 
-let initialized = false;
+//
+// Startup
+//
 
-async function init_app(): Promise<boolean> {
-    if (initialized) {
-        return false;
+let engine: Engine|null = null
+let toggle_demo_state = sessionStorage.getItem("navmesh_pathfinding_toggle_demo_state") || "both";
+let waiting_for_visible_demo = false;
+const min_width_for_both = 600;
+
+function updateBodyClasses() {
+    const classes = document.body.classList;
+    classes.remove("focus-article");
+    classes.remove("focus-demo");
+    if (toggle_demo_state === "article") {
+        classes.add("focus-article");
+    } else if (toggle_demo_state === "demo") {
+        classes.add("focus-demo");
+    }
+
+    sessionStorage.setItem('navmesh_pathfinding_toggle_demo_state', toggle_demo_state);
+}
+
+async function toggleDemo() {
+    if (toggle_demo_state === "both") {
+        toggle_demo_state = "article";
+    } else if (toggle_demo_state === "article") {
+        toggle_demo_state = "demo";
+    } else if (toggle_demo_state === "demo") {
+        if (document.body.offsetWidth < min_width_for_both) {
+            toggle_demo_state = "article";
+        } else {
+            toggle_demo_state = "both";
+        }
+    }
+
+    updateBodyClasses();
+
+    await init_app();
+}
+
+function init_demo_toggle_handlers() {
+    const body = document.body;
+    if (body.offsetWidth < min_width_for_both) {
+        toggle_demo_state = "article";
+    }
+
+    document.getElementById("toggleDemo")?.addEventListener("click", () => {
+        toggleDemo();
+    });
+
+    window.addEventListener("resize", () => {
+        if (body.offsetWidth < min_width_for_both && toggle_demo_state === "both") {
+            toggle_demo_state = "article";
+            updateBodyClasses();
+        }
+    });
+
+    updateBodyClasses();
+}
+
+
+async function init_app() {
+    if (engine) {
+        return;
     }
 
     const demo = document.getElementById("demo") as HTMLCanvasElement;
-    if (demo.clientWidth == 0 || demo.clientHeight == 0) {
-        return true;
+    if (demo.clientWidth == 0 || demo.clientHeight == 0 && !waiting_for_visible_demo) {
+        waiting_for_visible_demo = true;
+        window.addEventListener("resize", init_app);
+        return;
     }
 
-    const engine = await init();
+    engine = await init();
     if (!engine) {
         console.log("Failed to initialize application");
-        return false;
+        return;
     }
-
-    initialized = true;
 
     boundedRun = run.bind(null, engine);
     boundedRun();
 
-    window.removeEventListener("resize", init_app);
-
-    return false;
-}
-
-async function init_on_resize() {
-    const retry = await init_app();
-    if (retry) {
-        window.addEventListener("resize", init_app);
+    if (waiting_for_visible_demo) {
+        window.removeEventListener("resize", init_app);
+        waiting_for_visible_demo = false;
     }
 }
 
-function toggleDemo() {
-    const classes = document.body.classList;
-    classes.contains("focus") ? classes.remove("focus") : classes.add("focus");
-    init_app();
-}
 
-function init_demo_toggle_handlers() {
-    document.getElementById("toggleDemo")?.addEventListener("click", (event) => {
-        toggleDemo();
-    });
-    window.addEventListener("keydown", (event) => {
-        if (event.code == "KeyD") {
-            toggleDemo();
-        }
-    });
-}
-
-init_on_resize();
 init_demo_toggle_handlers();
+init_app();

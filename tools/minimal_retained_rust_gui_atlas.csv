@@ -1,0 +1,12 @@
+castle;./tools/unprocessed_assets/tiny_swords/Buildings/Black Buildings/Castle.png;0;3;auto;
+tower;./tools/unprocessed_assets/tiny_swords/Buildings/Black Buildings/Tower.png;0;3;auto;
+house;./tools/unprocessed_assets/tiny_swords/Buildings/Black Buildings/House1.png;0;3;auto;
+warrior_idle;./tools/unprocessed_assets/tiny_swords/Units/Black Units/Warrior/Warrior_Idle.png;0;3;animation;192;192;
+warrior_run;./tools/unprocessed_assets/tiny_swords/Units/Black Units/Warrior/Warrior_Run.png;0;3;animation;192;192;
+info_panel;./tools/processed_assets/info_panel.png;3;0;auto;
+main_menu_panel;./tools/processed_assets/menu_panel.png;3;0;auto;
+main_menu_panel_small;./tools/processed_assets/menu_panel_small.png;3;0;auto;
+main_menu_panel_large;./tools/processed_assets/menu_panel_large.png;3;0;auto;
+menu_button_default;./tools/processed_assets/menu_button_default.png;3;0;copy;
+menu_button_hovered;./tools/processed_assets/menu_button_hovered.png;3;0;copy;
+menu_button_pressed;./tools/processed_assets/menu_button_pressed.png;3;0;copy;

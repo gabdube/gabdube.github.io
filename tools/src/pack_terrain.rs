@@ -1,7 +1,7 @@
 /*!
 Usage: cargo run --release -p tools -- pack-terrain --input-csv sprites.csv --output-image test.png --output-csv test.csv
 
-cargo run --release -p tools -- pack-terrain --input-csv "tools/unprocessed_assets/tinysword_terrain.csv" --output-image "articles/minimal_retained_rust_gui/assets/terrain.png" --output-csv "articles/minimal_retained_rust_gui/assets/terrain.csv"
+cargo run --release -p tools -- pack-terrain --input-csv "tools/tinysword_terrain.csv" --output-image "articles/minimal_retained_rust_gui/assets/terrain.png" --output-csv "articles/minimal_retained_rust_gui/assets/terrain.csv"
 */
 use std::collections::HashMap;
 use crate::helpers::{SpriteData, LoadSpriteParams, CombinedTilemap, InputTilemapTypes, Tilemap15Pieces, BackgroundTile};

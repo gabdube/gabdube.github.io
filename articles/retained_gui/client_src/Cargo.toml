@@ -1,0 +1,21 @@
+[package]
+name = "retained_gui"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+# WASM tooling
+wasm-bindgen = "0.2.92"
+zerocopy = "0.8"
+zerocopy-derive = "0.8"
+
+# Std hashmap replacement
+fnv = "1.0.7"
+
+# Used in string rendering
+unicode-segmentation = "1.12.0"

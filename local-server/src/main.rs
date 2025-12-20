@@ -55,7 +55,7 @@ impl AssetsCollection {
 
 type SharedAssetsCollection = Arc<Mutex<AssetsCollection>>;
 
-const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "wasm", "glsl", "png", "csv", "ttf"];
+const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "wasm", "glsl", "png", "csv", "ttf", "bin"];
 
 fn load_text_file(files: &mut HashMap<String, FileType>, web_path: &str, local_path: &str) {
     match read_to_string(local_path) {
@@ -109,6 +109,7 @@ fn preload_files() -> SharedAssetsCollection {
     load_text_file(f, "/index.html", "index.html");
     load_text_file(f, "/styles.css", "styles.css");
     load_text_file(f, "/favico.svg", "favico.svg");
+    load_text_file(f, "/code.svg", "code.svg");
     load_bin_file(f, "/FiraCode-Regular.ttf", "FiraCode-Regular.ttf");
 
     preload_all_by_extensions(f, "html", true);
@@ -117,6 +118,7 @@ fn preload_files() -> SharedAssetsCollection {
     preload_all_by_extensions(f, "csv", true);
     preload_all_by_extensions(f, "wasm", false);
     preload_all_by_extensions(f, "png", false);
+    preload_all_by_extensions(f, "bin", false);
 
     preload_all_capsules(f);
 

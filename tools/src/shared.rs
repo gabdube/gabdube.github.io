@@ -75,11 +75,12 @@ pub fn has_arg(name: &str) -> bool {
 pub fn split_csv<const MAX_ARGS: usize, CB: FnMut(&[&str])>(csv: &str, mut callback: CB) {
     let mut start = 0;
     let mut end = 0;
+    let last_char_index = csv.len();
     let mut chars_iter = csv.chars();
     let mut args: [&str; MAX_ARGS] = [""; MAX_ARGS];
     while let Some(c) = chars_iter.next() {
         end += 1;
-        if c == '\n' {
+        if c == '\n' || end == last_char_index {
             let line = &csv[start..end];
             let mut args_count = 0;
             for substr in line.split(';') {

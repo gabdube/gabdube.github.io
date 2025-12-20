@@ -3,6 +3,7 @@ mod helpers;
 mod pack_sprites;
 mod pack_terrain;
 mod convert_tilemap;
+mod process_msdf_font;
 
 fn command_name() -> Option<String> {
     ::std::env::args().skip(1).next()
@@ -23,6 +24,7 @@ fn main() {
         "pack-sprites" => { pack_sprites::run(); },
         "pack-terrain" => { pack_terrain::run(); },
         "convert-tilemap" => { convert_tilemap::run(); },
+        "process-msdf-font" => { process_msdf_font::run(); }
         _ => {
             eprintln!("Unknown command name {:?}", cmd);
         }

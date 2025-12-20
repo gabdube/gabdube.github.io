@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retained mode GUI</title>
+
+  <link rel="icon" type="image/svg+xml" href="/favico.svg" />
+  <link rel="stylesheet" href="/styles.css">
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/monokai-sublime.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" defer  ></script>
+
+  <script src="engine.js" defer></script>
+</head>
+<body class="article">
+  <header>
+    <h2>A Retained mode GUI for rust</h2>
+    <div class="header-nav">
+      <div><a href="/index.html">Home</a></div>
+      <div><a id="toggleDemo">Toggle demo</a></div>
+      <div><a id="resetDemo">Reset Demo</a></div>
+    </div>
+  </header>
+  <main>
+    <div id="content">
+      <div>
+        <p>
+          As of 2025, Rust <a href="https://www.boringcactus.com/2025/04/13/2025-survey-of-rust-gui-libraries.html" target="_blank">has quite a few user interface libraries</a>,
+          however; when looking for a GUI toolkit to use into a game engine, the number of usable libraries drops to just a few. This article presents a minimal,
+          engine-agnostic, GUI architecture specifically designed for Rust which was developed for a game I'm developing.
+        </p>
+        <p>
+          The main problem with integrating GUI libraries in a custom game engine is that they almost all provide their own renderer, their own event loop,
+          their own assets system, etc. Those systems inevitably end up creating conflicts with the engine backend. For the few that are fully platform-independent,
+          like the <a href="https://github.com/emilk/egui" target="_blank">egui</a> core crate, styling and looks were a deal breaker.
+        <p>
+          <b>This is NOT a Rust library</b>. This is an in-depth guide to my own GUI architecture. The goal of this article is to share the work that
+          I've done, and to be a resource for people looking to build their own custom GUI toolkits.
+        </p>
+        <p>
+          This article is better read on a desktop, or any environment where the screen is large enough to hold this the demo side-by-side.
+          This will enable
+          <span class="code-link" 
+                data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+                data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui.rs#L44"
+                data-goto="pub struct Gui"> side by side code lookup</span> which is used to reference the code associated with each part of the article.
+          Also, the demos were built for desktop applications and mobile platforms were not tested.
+        </p>
+      </div>
+
+      <div>
+        Usage:
+        
+        <ol>
+          <li><a href="#waitAMinute">What about egui</a></li>
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#general">Entry point</a></li>
+          <li><a href="#building">Building the GUI</a></li>
+          <li><a href="#stateupdate">Updating the state</a></li>
+          <li><a href="#events">Handling events</a></li>
+          <li><a href="#rendering">Rendering</a></li>
+          
+        </ol>
+
+        Implementation:
+
+        <ol>
+          <li><a href="#components">Components storage</a></li>
+          <li><a href="#mutstate">Mutable state management</a></li>
+          <li><a href="#layoutcompute">Layout compute</a></li>
+          <li><a href="#inputs">User inputs</a></li>
+          <li><a href="#renderimpl">Rendering</a></li>
+          <li><a href="#createcomponent">Creating your own component</a></li>
+          <li><a href="#componentype">Composed components</a></li>
+          <li><a href="#renderfeed">Render feedback</a></li>
+          <li><a href="#afterrender">After render hooks</a></li>
+          <li><a href="#animations">Animations</a></li>
+          <li><a href="#closing">Closing words</a></li>
+        </ol>
+      </div>
+
+      <div>
+        <p>Special thanks to:</p>
+        <ul>
+          <li><a href="https://github.com/emilk/egui" target="_blank">Egui</a>: the inspiration for the top level API and for being a great GUI library</li>
+          <li><a href="https://www.youtube.com/watch?v=by9lQvpvMIc" target="_blank">How Clay's UI Layout Algorithm Works</a>: The main inspiration for the layout system</li>
+        </ul>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="waitAMinute" class="article-h"><a href="#waitAMinute">What about egui?</a></h2>
+      </div>
+
+      <div>
+        <p>
+          Egui &laquo;aims to be the easiest-to-use Rust GUI library, and the simplest way to make a web app in Rust&raquo; (from the egui README on github). 
+        </p>
+
+        <p>
+          Having already implemented egui into a few personal projects (including in <a href="https://gabdube.github.io/articles/navmesh_pathfinding/release/navmesh_pathfinding.html" target="_blank">my last article</a>),
+          I really think egui is one of the best GUI libraries available for Rust, however it falls short on two important points.
+        </p>
+
+        <p>
+          <b>Styling.</b> For styling, egui uses <code>egui::style::Style</code> and <code>egui::style::Visuals</code>, which is a very limited way to change the visual style of components.
+          Outside of changing colors and font sizes, you don't get much customization.
+        </p>
+
+        <p>
+          <b>Layout.</b> Egui uses a <a href="https://github.com/emilk/egui/issues/843#issuecomment-1886968264" target="_blank">single-pass layout system</a>. This heavily limits the complexity of layouts you can implement.
+          Outside of settings menus, games UI layouts tend to have non-standard presentation because they have to compromise between displaying information and showing gameplay.
+          A multi-pass layout system gives all the power needed to build even the craziest of layout.
+        </p>
+
+        <p>
+          Keeping layout and styling in mind, you can head over to <a href="https://www.gameuidatabase.com/index.php" target="_blank">gameuidatabase.com</a> and think about how you would implement any of those interfaces. Not just using egui,
+          but with any GUI system. Without an insanely powerful environment like HTML/CSS or coding a custom system (*wink* *wink*), things get tricky really quickly.
+        </p>
+
+        <p>
+          One last thing (although this is purely subjective), egui is a immediate-mode GUI, and I prefer retained-mode GUI. 
+          Mostly because I find it much easier to define complex layout or extensive styling in a retained environment.
+  
+          <details>
+            <summary><b>🤓 Immediate-mode GUI vs Retained-mode GUI</b></summary>
+            <div class="quote">
+              <p>
+                <p>
+                  In "immediate mode", the code that builds your ui components runs every frame. Some of the most commonly used game GUI libraries use immediate mode (for example <a href="https://github.com/ocornut/imgui" target="_blank">imgui</a>).
+                  The lack of state makes them much easier to integrate into an existing system. With Rust specifically, it makes managing lifetime easier as the ui data only really exists for the duration of a function call.
+                </p>
+                <hr class="article-separator">
+                <p>
+                  In "Retained mode", the UI state persist between frames. Usually there is a state object that is initialized once and then you can use that object to modify the GUI visuals at runtime.
+                  Retained mode GUI are often much more complex and powerful than immediate mode GUI, but they are harder to fit into an existing system. For example HTML/CSS operates as a retained mode GUI.
+                </p>
+              </p>
+            </div>
+          </details>
+        </p>
+      </div>
+  
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="overview" class="article-h"><a href="#overview">Overview</a></h2>
+      </div>
+      <div>
+        <p>
+          This article is split into two sections: the "usage" section that explains how the GUI API is used and the "implementation" section that
+          covers how things work under the hood.
+        </p>
+
+        <p>
+          The GUI architecture is built from the ground up to work with the Rust programming language. The first requirement is to make sure the
+          API doesn't store callbacks. Mixing callbacks and GUI logic is one of the quickest ways to make the borrow checker throw a tantrum. This
+          tend to have a terrible effect on API ergonomics. A callback-less API also greatly simplifies lifetime management; in the best-case scenario,
+          they are completely elided.
+        </p>
+
+        <p>
+          Flexibility is also very important. Game GUIs have unique visual requirements and an API that is too restrictive can choke on edge cases. 
+          Here, each GUI component defines its own style and rendering logic. A custom GUI architecture can also directly reuse the
+          asset system (images, fonts, shaders) from the host game engine. Data types are "hardcoded" in an enum instead of using generics or trait objects.
+          All of this gives plenty of leeway when encountering edge cases.
+        </p>
+
+        <p>
+          Under anything but the most extreme UI workloads, performance is a non-issue. Rust is very fast and rendering UI elements is really simple. 
+          So long as the most obvious code smells are avoided, such as allocating large amounts of memory each frame or generating a draw call for every sprite,
+          UI rendering will be a fraction of a fraction of the total rendering budget.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="general" class="article-h"><a href="#general">Entry point</a></h2>
+      </div>
+
+      <div>
+        <p>
+          The entry point of the GUI system is the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui.rs#L44"
+            data-goto="pub struct Gui">Gui struct</span>,
+          a context structure that holds all the GUI data for the duration of the application. The context structure is <i>mostly</i> decoupled
+          from the rest of the engine. The only exception is the assets and the base types that are imported from the host engine.
+        </p>
+
+        <p>
+          The GUI context, by itself, doesn't need parameters in order to be instantiated. The demo simply derives the <code>default</code> implementation
+          from the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data.rs#L49"
+            data-goto="pub struct GameData">GameData struct</span>.
+          Because some assets (like fonts) are taken from the host engine, an initalization step is needed to copy the shared assets and to initialize the gui view.
+          This is done in the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data.rs#L57"
+            data-goto="pub fn init">init function</span>.
+        </p>
+
+        <p>
+          The main functionalities of the GUI context can be split into four categories: building and updating the GUI, handling user inputs,
+          sending user events, and generating the sprites for rendering. Here's a pseudocode example:
+        </p>
+
+<pre><code>fn main() {
+  let mut gui = Gui::default();
+  gui.build(|gui| {
+    // TODO define the ui components
+  });
+  loop {
+    // Sending user events to the GUI
+    gui.send_inputs(user_inputs);
+    
+    // Process the GUI events
+    while let Some(Ok(event)) = gui.read_next_event() {
+    }
+    
+    // Generate sprites
+    let mut sprites = Vec::new();
+    gui.generate_sprites(|sprite| {
+      sprites.push(sprite);
+    });
+    render(sprites);
+  }
+}</code></pre>
+
+      <p>
+        And here's how the first demo UI building code looks like (<span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#L162"
+            data-goto="fn basic_demo">code link</span>).
+      </p>
+
+<pre><code>fn basic_demo(assets: &Assets, gui_state: &mut RunningGuiState, gui: &mut GuiBuilder) {
+    let atlas = &assets.atlas;
+    let button_style = default_button_style(atlas);
+
+    gui_state.ferris_type = 0;
+    gui_state.ferris = gui.image_state(atlas.texture, atlas.ferris);
+
+    gui.layout_center();
+    gui.layout_items_flex(flexbox_layout());
+    gui.group(|gui| {
+        gui.image_dyn(gui_state.ferris);
+
+        gui.spacer(0.0, 10.0);
+
+        gui.button(GuiEvent::ToggleFerris, &button_style, "Toggle", DEFAULT_TEXT_SCALE);
+
+        gui.spacer(0.0, 10.0);
+
+        gui.button(GuiEvent::NextDemo, &button_style, "Next", DEFAULT_TEXT_SCALE);
+    });
+}</code></pre>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="building" class="article-h"><a href="#building">Building the GUI</a></h2>
+      </div>
+
+      <div>
+        <p>
+          Building the GUI can happen at any time during the engine's game loop. In this demo, the first build happens when the game state changes
+          from  <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/lib.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/lib.rs#L96"
+            data-goto="GameState::Uninitialized => {">Uninitialized to Running</span>. 
+        </p>
+
+        <p>
+          All of the GUI building logic is grouped into the <code>build_gui</code> module. The module exports the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#L340"
+            data-goto="pub fn build">build</span>
+          function to update the current state of the UI based on the current value of <code>state.current_demo</code>.
+          In a real application, each GUI interface would have its own module, but the demo code is small enough to fit into a single file.
+        </p>
+
+        <p>
+          The <code>build</code> function in the <code>build_gui</code> module calls the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui.rs#L63"
+            data-goto="pub fn build">build</span>
+          method of the GUI context, which in turns calls the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L60"
+            data-goto="pub(super) fn build">build</span>
+          method of the GUI builder. The context function takes a callback. The callback has a single argument, a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L35"
+            data-goto="pub struct GuiBuilder">GuiBuilder</span>
+          value that contains all the functions required to create new UI components, define layout, and register events (yes this is a lot of building).
+        </p>
+
+        <p>
+          Calling the build function of the context replaces all existing data with the new data defined by the callback.
+          The GUI must be rebuilt every time the user changes interfaces.
+        </p>
+
+        <p>
+          Let's start by looking at how the
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#L171"
+              data-goto="fn basic_demo">first demo</span> works.
+        </p>
+
+        <p class="sub-article-header"><b>• Inserting new components</b></p>
+
+        <p>
+          The <code>basic_demo</code> function creates six UI components. A group, an image, two spacers,
+          and two buttons. The builder has a unique function for each type of GUI component. For example, 
+          the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L36"
+            data-goto="pub fn button<">button</span>
+          builder function creates 
+          a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/button.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/components/button.rs#L43"
+            data-goto="pub struct GuiComponentButton">GuiComponentButton</span>.
+        </p>
+
+        <p>
+          Components with children, like the <code>group</code> component, takes a callback just like the original <code>build</code> function and pass down the builder object. 
+          Some components, like the <code>list_view_base</code> component, use a custom builder as argument in their callback.
+        </p>
+  
+        <p class="sub-article-header"><b>• Defining a component style</b></p>
+
+        <p>
+          There is no global styling system. Instead, each component can define their own "ComponentStyle" struct. This struct is instantiated by the user
+          and passed to its builder function, and finally stored in the component data.
+        </p>
+
+        <p>
+          The GUI system does not own the assets used by the components style, instead, it borrows them from the host engine. This demo uses an
+          <a href="/articles/retained_gui/release/assets/atlas.png" target="_blank">atlas</a> to store all the textures and the style data stores
+          a unique identifier for the texture and the UV coordinates of the sub-image to display. For example, see the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_srcsrc/state/running/build_gui.rs#L78"
+            data-goto="fn default_button_style">default_button_style</span> function.
+        </p>
+
+        <p class="sub-article-header"><b>• Defining a component layout</b></p>
+
+        <p>
+          The builder has two groups of functions to define the layout of a component: <code>layout_*</code> and <code>layout_items_*</code>. The first one
+          defines the layout of the component in its parent and the second one defines the layout of the component's children. <code>*</code> specifies the type of
+          layout to apply, for example <code>layout_center</code>. Calling a layout function sets the layout for the next component, the layout value is
+          cleared after every insert.
+        </p>
+
+        <p>
+          By default, child components use their parent items layout to size and position themselves. However, specifying <code>layout_*</code> overrides that.
+          The GUI "root", aka the screen, does not define a items layout so any top-level item need to explicitly define theirs. In "basic_demo", <code>layout_center</code>
+          centers the group on the screen.
+        </p>
+
+        <p>
+          The builder offers multiple helper functions to quickly define layouts, but under the hood they are all stored in
+          a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/layout.rs#L156"
+            data-goto="pub struct GuiLayout {">GuiLayout</span> struct.
+        </p>
+
+        <p>
+          The <a href="#layout">Layout Compute</a> section will go deeper on how the layout works.
+        </p>
+
+        <p class="sub-article-header"><b>• Registering events</b></p>
+
+        <p>
+          Events are user-defined values that can be raised by GUI components, such as a button click. Retained GUI frameworks commonly use callbacks (e.g., <code>addEventListener</code>). 
+          However, in Rust, storing callbacks introduces lifetime management and interior mutability issues, which significantly complicates development and makes the end API
+          more annoying to use.
+        </p>
+
+        <p>
+          Events are passed to GUI components via their builder methods. Beyond that, event implementation is left to each GUI component (for example, see the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/button.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/components/button.rs#L49"
+            data-goto="pub on_click: GuiInternalEvent">button implementation</span>).
+        </p>
+
+        <p>
+          Inside the GUI context, user events are converted into a common storage type, <code>GuiInternalEvent</code> (<code>NonZeroU32</code> in the demo). 
+          This ensures the GUI context struct remains generic-free. Having a static storage type (rather than <code>Box&lt;dyn Any&gt;</code>) also makes it easier to read events from the context. 
+          The user type must implement <code>Into&lt;GuiInternalEvent&gt;</code> and <code>TryFrom&lt;GuiInternalEvent&gt;</code>.
+        </p>
+
+        <p>
+          The <a href="#events">Handling events</a> section will go deeper on how the events work.
+        </p>
+
+        <p class="sub-article-header"><b>• Registering animations</b></p>
+
+        <p>
+          The <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/animations.rs#L59"
+            data-goto="pub struct GuiAnimation">GuiAnimation</span>
+          struct defines a GUI animation. This is still a work in progress, but the end goal is to copy how animations work in HTML/CSS.
+        </p>
+
+        <p>
+          Animations are pushed into the GUI using the <code>animate</code> and <code>animate_dyn</code> functions. Just like layouts, calling
+          those functions will tie the animation to the next inserted component. The demo supports one animation per GUI component. Adding support for more
+          than one is trivial, but not needed here.
+        </p>
+
+        <p>
+          Dynamic animations take a special state value <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/animations.rs#L7"
+            data-goto="pub struct GuiAnimationControl">GuiAnimationControl</span> that gives the user control over how the animation is executed.
+          For example, playing, pausing and restarting. One <code>GuiAnimationControl</code> can control many animations.
+        </p>
+
+        <p>
+          The <a href="#animations">animations</a> section will go deeper on how animations works.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="stateupdate" class="article-h"><a href="#stateupdate">Updating the state</a></h2>
+      </div>
+      <div>
+        <p>
+          Just like Rust variables are immutable by default, the GUI state is also immutable.
+          After the build phase, it becomes impossible to insert new UI components into the GUI, and all components become read-only.
+        </p>
+
+        <p class="sub-article-header"><b>• Defining mutable state</b></p>
+
+        <p>
+          For large UI state changes (e.g., changing interfaces), rebuilding is fine. However, all retained GUI systems needs some level of
+          finely-grained mutable state.
+          The <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state/state_store.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/state/state_store.rs#L20"
+            data-goto="pub struct GuiState<">GuiState</span> values are used to mark mutable values in a UI.
+          The struct uses generics to implement a strongly typed interface.
+        </p>
+
+        <p>
+          <code>GuiState</code> values allow the user to read or write values within the current GUI. They can only be instantiated at build time, and are used
+          by UI components with mutable state. A <code>GuiValue</code> only stays valid for the current UI. Calling the build function again will invalidate
+          all generated GuiValues.
+          For example, the first demo uses <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#L167"
+            data-goto="gui_state.ferris = gui.image_state">gui.image_state</span> to define a mutable image resource and it
+          uses <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#L172"
+            data-goto="gui.image_dyn(gui_state.ferris)">image_dyn</span> with the state value to display a mutable image in the GUI.
+        </p>
+
+        <p>
+          The GUI state pools mutable values 
+          into the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/state.rs#L15"
+            data-goto="pub(super) struct GuiStateAlloc">GuiStateAlloc</span> struct. The types of values that can be stored are explicitly defined
+          in the  <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state/state_store.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/state/state_store.rs#L27"
+            data-goto="pub enum GuiStateStore">GuiStateStore</span> enum.
+        </p>
+
+        <p>
+          All state values for a specific interface can be grouped into a
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#L39"
+            data-goto="pub struct RunningGuiState">single struct</span>.
+          That struct can then be stored in the game state. This gives the program an overview of what is displayed in the current interface and
+          a straightforward way to update the GUI state without having to worry about the inner GUI structure.
+        </p>
+
+        <p class="sub-article-header"><b>• Reading/Writing state</b></p>
+
+        <p>
+          Once the GUI is running, state variables can be accessed using <code>get_state</code> and <code>set_state</code>. Because a state value
+          is only a pointer into the GUI data, updates have to go through the main <code>Gui</code> context. See the 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running.rs#L47"
+            data-goto="pub fn update">update</span> function in the main game loop for an example.
+        </p>
+
+        <p>
+          In this implementation, the state updates are grouped inside an array and are only propagated at sprite generation. When
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui.rs#L70"
+            data-goto="pub fn generate_sprites">generate_sprites</span> is called, <code>state::sync</code> writes the state updates to the GUI components.
+          This is because state object can also be changed by other GUI components, and having one point of update makes things easier to handle.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+         <h2 id="events" class="article-h"><a href="#events">Handling events</a></h2>
+      </div>
+      <div>
+        <p>
+          After defining user events and binding the values to the components during the build phase,
+          event handling works in two steps: first sending the user inputs (mouse click, keystrokes) to the GUI and then processing the GUI events
+          generated by those inputs. GUI components could also generate events without user interaction, but this demo does not include an example of that.
+        </p>
+
+        <p class="sub-article-header"><b>• Sending user inputs to the GUI</b></p>
+
+        <p>
+          The 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/inputs.rs#L65"
+            data-goto="pub struct GuiInputs<'a>">GuiInputs</span> struct groups the most recent user inputs. Then the 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui.rs#L84"
+            data-goto="pub fn send_inputs">send_inputs</span>
+          function takes this value and runs all the input processing logic. If the GUI state is changed in any way, this function returns <code>true</code>
+          otherwise, it returns <code>false</code>.
+        </p>
+
+        <p>
+          For example, this demo first receives user inputs from javascript callbacks, then the raw inputs are then sent to the WASM game client, and finally
+          the user inputs are forwarded to the GUI system using the
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data.rs#L89"
+            data-goto="pub fn dispatch_inputs_to_gui">dispatch_inputs_to_gui</span> function.
+        </p>
+
+        <p>
+          Under the hood, the GUI system will dispatch the inputs to the right components. This can trigger effects like a button style changing from
+          default to hovered, or generating user events.
+        </p>
+
+        <p class="sub-article-header"><b>• Receiving user events</b></p>
+
+        <p>
+          When <code>send_inputs</code> is called, under specific hardcoded conditions, it can trigger user events registered during the build phase.
+        </p>
+
+        <p>
+          Reading those events is done using the 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui.rs#L119"
+            data-goto="pub fn read_next_event">read_next_event</span> function. The function returns the next event in the pipeline if there is one or <code>None</code>
+          if all events have been processed. It also tries to automatically convert the storage type of the GUI back into the user type.
+        </p>
+
+        <p>
+          A rust iterator cannot be used here. It is pretty much certain that the event loop will mutate the GUI state, and using an iterator would it
+          because of the Borrow Checker. The <code>read_next_event</code> method fixes that problem without having to allocate memory.
+        </p>
+
+        <p>
+          In the demo, see the
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running.rs#L53"
+            data-goto="gui.read_next_event() {">update</span> function in the main loop again.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+        
+      <div>
+        <h2 id="rendering" class="article-h"><a href="#rendering">Rendering</a></h2>
+      </div>
+
+      <div>
+        <p>
+          To turn GUI component into sprites, the
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs#L70"
+              data-goto="pub fn generate_sprites">generate_sprites</span> function is used.
+          The function takes a callback. The callback only parameter is a <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/base.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/base.rs#L20"
+              data-goto="pub struct GuiOutputSprite">GuiOutputSprite</span> struct. The callback will be triggered for every sprite generated by the GUI.
+        </p>
+
+        <p>
+          Right now, the returned sprites are really just AABBs using static resource identifer passed to the builder functions.
+          A real application may need to handle more complex shapes, so <code>GuiOutputSprite</code> could be turned into an enum.
+        </p>
+
+        <p>
+          The return value of the <code>generate_sprites</code> function is a bool that tells the renderer if the GUI should be re-rendered next frame.
+          This can be used for animations or for some specific procedure. For example, in the list view demo, the first frame computes the inner size of
+          the list and the second frame resizes the scrollbar components to match the inner size. Internally, this process is handled by a 
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/after_render_hooks.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/after_render_hooks.rs#L15"
+              data-goto="pub(super) enum AfterRenderHook">AfterRenderHook</span> (more on that later).
+        </p>
+
+        <p>
+          <code>GuiSpriteFlags</code> defines what kind of sprite should be rendered. The three kind: "textured", "solid_color", and "text" are
+          self-explanatory. The demo handle all three in a
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/release/assets/gui.frag.glsl"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/release/assets/gui.frag.glsl"
+              data-goto="void main()">single shader</span>.  A more dynamic system might pass unique shader identifier instead, just like it is done with textures.
+        </p>
+
+        <p>
+          The last step before rendering is to turn the sprite list into a renderable mesh. This is not handled by the GUI system. The demo use it's own
+          tiny rasterizer in
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/output/gui_rasterizer.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/output/gui_rasterizer.rs#L33"
+              data-goto="pub fn generate_meshes">gui_rasterizer</span>.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="impl" class="article-h"><a href="#impl">Implementation</a></h2>
+      </div>
+
+      <div>
+        <p>
+          With the API overview done, now lets dig into the code.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="components" class="article-h"><a href="#components">Components storage</a></h2>
+      </div>
+
+      <div>
+        <p>
+          Component storage is probably the simplest part of this system, mostly because the GUI structure becomes immutable after build time.
+          Components are stored in linear memory for fast iteration speed and are split into a structure of arrays since not every subsystem needs to query all the component data at once.
+        </p>
+
+        <p>
+          The GUI components are stored in
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L229"
+            data-goto="pub struct GuiComponents">GuiComponents</span>.
+          The structure only allocates one big buffer and then suballocates the GUI components. By default, a GUI has a capacity
+          of 32 components (defined in <code>impl Default</code>). In the build phase, if this capacity is exceeded, the buffer will be reallocated.
+        </p>
+
+        <p>
+          Gui components have the following sub components:
+          <ol>
+            <li>
+              <span class="code-link" 
+                data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+                data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L36"
+                data-goto="pub struct GuiNode">GuiNode</span>: Stores the number of children and descendants of a component. It is required to traverse the data structure. Also store a <code>clip</code> flag to tell
+              if the renderer should clip the children that overflow the parent bounds.
+            </li>
+            <li>
+              <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+              data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L53"
+              data-goto="pub struct GuiComponentView">GuiComponentView</span>: stores the results of the layout computation.
+            </li>
+            <li>
+              <span class="code-link" 
+                data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout.rs"
+                data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout.rs#L156"
+                data-goto="pub struct GuiLayout">GuiLayout</span>: stores the layout info of the component.
+            </li>
+            <li>
+              <span class="code-link" 
+                data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+                data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L86"
+                data-goto="pub enum GuiComponentData">GuiComponentData</span>: stores the component-specific data.
+            </li>
+          </ol>
+        </p>
+
+        <p>
+          All the functions in <code>GuiComponents</code> are helpers to get or set data.
+        </p>
+      </div>
+  
+      <hr class="article-separator">
+      <div>
+        <h2 id="mutstate" class="article-h"><a href="#mutstate">Mutable state management</a></h2>
+      </div>
+
+      <div>
+        <p>
+          Building a sane state management system in a GUI toolkit is a challenge. Implementing basic support so that a user can query or update information
+          from the GUI is pretty straightforward; however things get more difficult when GUI component themselves need to query or update data from other components.
+        </p>
+
+        <p>
+          In order to make things manageable, state management is implemented as a separate opaque structure that can be queried using special handles (<code>GuiState</code>).
+          This way both the user and the GUI components can read and write state without having to worry about things like the Borrow Checker.
+        </p>
+
+        <p class="sub-article-header"><b>• State storage</b></p>
+
+        <p>
+          All the state values are stored in the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L15"
+            data-goto="pub(super) struct GuiStateAlloc">GuiStateAlloc</span>. The inner storage uses a <code>Vec</code> of 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state/state_store.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state/state_store.rs#L145"
+            data-goto="pub struct GuiStateStoreWrapper">GuiStateStoreWrapper</span>. The wrapper stores both the state value and the <code>listeners</code>.
+          The listeners array stores the indices of the components that needs to be updated if the value is updated.
+        </p>
+
+        <p>
+          Back in the pool struct, the <code>updated</code> Vec stores the indices of which state value were updated. This is because state updates are not immediately
+          propagated to the components, propagation instead happens once, when the GUI sprites are genererated.
+        </p>
+
+        <p>
+          <code>GuiState</code> handles are only valid for the active GUI and will be invalidated the next time the GUI is rebuilt.
+          To keep track of that, a <code>generation</code> number is stored in the GUI state and each <code>GuiState</code>
+          stores the generation value of their GUI. If a state value from a previous generation is accessed, a warning will be raised and
+          the current state won't be touched. The program will not panic.
+        </p>
+
+
+        <p class="sub-article-header"><b>• State registering</b></p>
+
+        <p>
+          A new state value is registered using the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L37"
+            data-goto="pub fn push<T>">push</span> method. This is usually done at build time by the <code>*_state</code> methods on the <code>GuiBuilder</code> struct
+          (<span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs#7L1"
+            data-goto="pub fn image_state">example</span>).
+          The method takes a <code>GuiStateStore</code> and returns a <code>GuiState</code> referring to this value. However, GUI components are free to create their own state and
+          use it internally. For example, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L281"
+            data-goto="let offset_y = self.children_offset_y_state">scroll_view</span>  component manages scrolling offsets using internal state.
+        </p>
+
+        <p>
+          To bind a GUI component to a GUI state, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L108"
+            data-goto="pub fn insert_component_listener">insert_*_listeners</span> methods must be called. <code>insert_component_listener</code> binds 
+          a state to component-specific data, and <code>insert_layout_listener</code> binds a state to layout data. 
+          Two methods are needed because component data and component layouts are stored separately. Internally a flag is used to know how to synchronize updates.
+        </p>
+
+        <p>
+          The insert listeners methods are used by the GUI component creation functions in the builder. For example the
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/simple.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/simple.rs#L148"
+            data-goto="self.inner.state_alloc.insert_component_listener">label_dyn</span> function.
+        </p>
+
+        <p class="sub-article-header"><b>• State read/write</b></p>
+
+        <p>
+          From the user side, state is retrieved with the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L68"
+            data-goto="pub fn get<'a, T>">get_state</span> method
+          and updated with the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L58"
+            data-goto="pub fn set<T>">set_state</span> method. Both methods take the state value
+          to find the data in the state storage. <code>get_state</code> will copy the inner value and <code>set_state</code> will replace the old value
+          with the new value provided to the method. The <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L157"
+            data-goto="fn validate_state<T>">validate_state</span> 
+          method ensures that reading or writing is safe.
+        </p>
+
+        <p>
+          In <code>generate_sprites</code>, the 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#L239"
+            data-goto="pub(super) fn sync">state::sync</span> synchronize the values in the state pool with the GUI components.
+          Using <code>listener.is_layout</code>, the code matches the state to either component data or layout data. The <code>sync_state_data</code>
+          method of the target GUI component then receives the wrapped value and finalizes the update. 
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="layoutcompute" class="article-h"><a href="#layoutcompute">Layout compute</a></h2>
+      </div>
+
+      <div>
+        <p>
+          
+        </p>
+
+        <p>
+          Layout computation happens during sprites generation, just after the state is synchronized. The <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs#L8"
+            data-goto="pub(super) fn layout_compute">layout_compute</span> function handles all the logic.
+          The layout system uses three pass inspired from Clay's UI layout video (<a href="https://www.youtube.com/watch?v=by9lQvpvMIc">https://www.youtube.com/watch?v=by9lQvpvMIc</a>)
+          , with few extra bells and whistles to support multiple layouts.
+        </p>
+
+        <p>
+          All three layout passes loop over every GUI component using a depth-first algorithm. Note that only the layout functions used in the demo are implemented.
+        </p>
+
+        <p class="sub-article-header"><b>• The sizing pass</b></p>
+
+        <p>
+          The fit pass computes the fixed size of a component. The first thing to look up is the minimum size defined in the component data. This is done
+          by the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs#L40"
+            data-goto="fn fit_component_from_default">fit_component_from_default</span> function.
+        </p>
+
+        <p>
+          For GUI components with children, the <code>fit_layout_size</code> is called again to visit the children. The function saves the
+          total size of the children in the <code>LayoutSizingParentFit</code> struct.
+        </p>
+
+        <p>
+          Then, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs#L62"
+            data-goto="fn fit_component_from_layout">fit_component_from_layout</span> 
+          is used to compute the fit sizing based the layout data and the total children size if any.
+        </p>
+
+        <p>
+          Once the fit sizing is computed, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs#L100"
+            data-goto="fn update_parent_size">update_parent_size</span>
+          function sends back the computed layout info to the parent GUI component. Finally, the computed size is stored in the component view.
+        </p>
+
+        <p class="sub-article-header"><b>• The grow pass</b></p>
+
+        <p>
+          The grow pass takes the minimum size of the component computed in the fit pass and, if the layout demands it, grows the size to fill the free space in the parent.
+          In the demo, <code>layout_background</code> takes a GUI component and expand its size to cover the entirety of its parent.
+        </p>
+
+        <p>
+          Other layout models also support growing elements. For example, flexbox in CSS will grow items on the cross-axis with
+          <code>align-items</code> set to <code>stretch</code> or on the main axis using the <code>flex-grow</code> property.
+          However, none of the demos makes use of those features, so there is no code implementation for them.
+        </p>
+
+
+        <p class="sub-article-header"><b>• The position pass</b></p>
+
+        <p>
+          The position pass finds the final position of all the components in the view. <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs#L295"
+            data-goto="fn position_layout">position_layout</span>
+          first checks the <code>align_self.align</code> value of the layout. If the component layout does not override its parent layout,
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/layout_compute.rs#L282"
+            data-goto="fn position_layout_parent">position_layout_parent</span>
+          computes the position, otherwise the position algorithm moves the component at the right place within its parent.
+        </p>
+
+        <p>
+          Then <code>layout.align_self.offset</code> is added to the computed position. <code>offset</code> can be used to move an item when scrolling or moving
+          an item inside its parent, as done in the window demo. This gives us the true final position of the component.
+        </p>
+
+        <p>
+          After positioning, we can compute the final scissor AABB for the component if <code>node.clip</code> is true or if the component parent clips its children.
+        </p>
+
+        <p>
+          Finally, <code>position_layout</code> is called again for every child of the current component.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="inputs" class="article-h"><a href="#inputs">User inputs</a></h2>
+      </div>
+      
+      <div>
+        <p>
+          All of the input handling logic is grouped under the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs"
+            data-goto="use">inputs</span> module. Inside this module, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs#L36"
+            data-goto="pub(super) struct GuiInputState">GuiInputState</span> struct is used to store the current input state of the GUI (e.g. which component is being hovered).
+        </p>
+    
+        <p>
+          Starting from the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui.rs#L84"
+            data-goto="pub fn send_inputs">send_inputs</span> function. Each input type (mouse move, key presses) is handled by its own function.
+          Each of the input handling function returns <code>true</code> if the received input changed the GUI state. If the GUI state changed, the
+          <code>send_inputs</code> function also returns true to signal to the user that the GUI should be redrawn.
+        </p>
+
+        <p>
+          The type of actions executed by the inputs functions falls under two categories:
+        </p>
+
+        <p class="sub-article-header"><b>• Updating the GUI input state</b></p>
+
+        <p>
+          <code>GuiInputState</code> stores the indices of which component is being hovered, which component is under user focus, and which component is being
+          pressed. Updating the <code>GuiInputState</code> must be the first thing to do when processing events because the state is used by the two following categories.
+        </p>
+
+        <p>
+          For example, the mouse move handler will call the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs#L366"
+            data-goto="fn update_hovered_components">update_hovered_components</span> function. This function iterates over the GUI components and builds a list,
+          from bottommost to topmost, of all currently hovered GUI components.
+        </p>
+
+        <p class="sub-article-header"><b>• Dispatching the inputs to the GUI components</b></p>
+
+        <p>
+          Each GUI component has methods to receive specific user inputs, but not all of them need to respond to all input types. Before dispatching inputs to
+          a GUI component, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L206"
+            data-goto="fn respond_to_input_type">respond_to_input_type</span> method is called. If a component accepts an event type, the associated
+          input function on <code>GuiComponentData</code> is called.
+        </p>
+
+        <p>
+          Input functions, like the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L136"
+            data-goto="fn on_mouse_state_changed">on_mouse_state_changed</span> function, can take <code>GuiStateAlloc</code> and a <code>GuiOutputEvents</code>
+          parameter on top of the input-specific data. This allows the targeted component to update the GUI state and push new events to the user.
+        </p>
+
+      </div>
+
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="renderimpl" class="article-h"><a href="#renderimpl">Rendering</a></h2>
+      </div>
+
+      <div>
+        <p>
+          In the context of this GUI architecture, rendering means turning GUI components into sprites. All logic related to this is handled in the 
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/generate_sprites.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/generate_sprites.rs#L45"
+              data-goto="pub(super) fn generate_sprites">generate_sprites</span> module.
+        </p>
+
+        <p>
+          Generating sprites works by iterating over the GUI components, extracting the view and the data, and calling a more specific <code>generate_*</code>
+          function where * is the name of the GUI component to render. Not all GUI components needs to be rendered, components without visible parts 
+          or those that are completely clipped from view are skipped. 
+        </p>
+
+        <p>
+          Inside the component rendering function, one or more 
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/generate_sprites.rs"
+              data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/generate_sprites.rs#L20"
+              data-goto="pub struct GuiOutputSprite">GuiOutputSprite</span> are generated. Also, some component-specific layout can be computed, for example 
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/button.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/button.rs#L102"
+              data-goto="pub fn generate_sprites">the button render function</span> centers its own text.
+        </p>
+
+        <p>
+          Rendering sprites does not allocate memory, instead sprites are passed back to the game client using a callback. The game client must turn the sprites
+          into renderable meshes. See <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/output/gui_rasterizer.rs"
+              data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/output/gui_rasterizer.rs#L57"
+              data-goto="fn generate_meshes_inner">generate_meshes_inner</span>
+          for an example.
+        </p>
+
+        <p>
+          Rasterizing could be handled by the GUI system; however, the architecture of this project splits data from rendering logic. That is why the GUI system is in
+          the <code>data</code> module, and the rasterizer is in the <code>output</code> module. 
+        </p>
+
+        <p>
+          A way this could be improved is by defining a "renderer" trait in the GUI module, having the user's renderer implement it,
+          and passing the renderer implementation to the generate sprites method.
+        </p>
+      </div>
+
+      <div>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="createcomponent" class="article-h"><a href="#createcomponent">Creating your own component</a></h2>
+      </div>
+
+      <div>
+        <p>
+          The demo implements a few basic components, but the expectation is that each application will have its own custom component library.
+          Custom components are built using the following steps:
+        </p>
+
+        <p class="sub-article-header"><b>• Creating a new component data type</b></p>
+
+        <p>
+          GUI components are simple Rust structure. The first step is creating a new module in the <code>components</code> module
+          and defining your own component type. The naming convention is <code>GuiComponent[ComponentName]</code>. Next, the new struct needs to be added
+          to <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+              data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L86"
+              data-goto="pub enum GuiComponentData">GuiComponentData</span>. It's a good idea to keep the component size under 64 bytes to reduce the padding bytes
+          in the enum. This can be done by boxing the data that is accessed less often. See <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs#L32"
+            data-goto="pub struct GuiComponentTextInput">GuiComponentTextInput</span> for example.
+        </p>
+
+        <p class="sub-article-header"><b>• Builder code</b></p>
+        
+        <p>
+          Components are not directly initialized by the user; instead, they go through the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L35"
+            data-goto="pub struct GuiBuilder">GuiBuilder</span> object. To keep all the component code together, a 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs#L287"
+            data-goto="pub fn text_input">GuiBuilder impl block</span> is added to the component module. Inside it, a new method named after the component is added.
+        </p>
+
+        <p>
+          To insert a new GUI component into the GUI context, use the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L170"
+            data-goto="pub(super) fn push">push</span> helper method for simple components and the 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/builder.rs#L170"
+            data-goto="pub(super) fn push">push_parent/pop_parent</span> methods for components with children.
+          The builder can also access the internals of the main GUI struct using <code>self.inner</code>.
+        </p>
+
+        <p>
+          More complex components can insert their own "shadow components" as is done with the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/window.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/components/window.rs#L126"
+            data-goto="pub fn window">window</span> component.
+        </p>
+
+        <p class="sub-article-header"><b>• Rendering</b></p>
+
+        <p>
+          Rendering is done by implementing a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs#L88"
+            data-goto="pub fn generate_sprites">generate_sprites</span> method on the component struct and updating the match statement in the 
+        <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/generate_sprites.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/data/gui/generate_sprites.rs#L45"
+            data-goto="pub(super) fn generate_sprites">generate_sprites</span> method of the <code>generate_sprites</code> module.
+        </p>
+
+        <p>
+          The <code>generate_sprites</code> function receives the computed view of the component and a callback to generate sprites. The callback can
+          be called for each sprites that builds the component.
+        </p>
+
+        <p class="sub-article-header"><b>• Inputs and events logic</b></p>
+
+        <p>
+          Add the new component to the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L206"
+            data-goto="pub(super) fn respond_to_input_type">respond_to_input_type</span> method of the components enum. The method returns an 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs"
+            data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/inputs.rs#L9"
+            data-goto="pub(super) struct InputType">InputType</span> that tells which input type is supported by the component. Then add the new component
+          to the associated <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L116"
+            data-goto="pub(super) fn on_mouse_move">input methods</span>.
+        </p>
+
+        <p>
+          Inputs logic can update the state and trigger user events, that's why many handlers use <code>GuiStateAlloc</code> and <code>GuiOutputEvents</code> as parameters.
+        </p>
+  
+        <p class="sub-article-header"><b>• State updates</b></p>
+
+        <p>
+          If a component needs to listen to state updates, as in the previous step, start by adding it to the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs#L105"
+            data-goto="pub(super) fn sync_state_data">sync_state_data</span> method of the components enum. State updates are handled by patching the GUI component data with the value
+          from the <code>GuiStateStore</code>.
+        </p>
+
+        
+      </div>
+
+      
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="componentype" class="article-h"><a href="#componentype">Composed components</a></h2>
+      </div>
+
+      <div>
+        <p>
+          The more complex a GUI component becomes, the more annoying it is to implement them as a single entity. Large components can be broken down into smaller
+          components as it is done in the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running/build_gui.rs#126"
+            data-goto="fn list_view_component">list view demo</span>. Composed components can reuse the layout and input system of the GUI engine, thus
+            greatly reducing their implementation complexity. This also allows the end user to assemble their own custom components without having to dig
+            into the engine's source code.
+        </p>
+
+        <p>
+          The list component is implemented as a user function, <code>list_view_component</code> and is composed of three built-in components: <code>ScrollView</code>,
+          <code>ListViewBase</code>, and <code>ListViewItem</code>.
+        </p>
+
+        <p>
+          The function takes four arguments, the GUI builder (<code>gui</code>), the values to display (<code>&[&str]</code>), a state value to track the clicked item (<code>GuiState&lt;usize&gt;</usize></code>)
+          and the event generated when the user clicks on an ite. Because of the way the layout are passed down to components, the user-defined function receives its layout the same way built-in components do:
+          <code>layout_parent_fixed_size</code> temporarily stores data into the builder and both values will be used by the next component. In this case, the layout is consumed by the <code>ScrollView</code>.
+        </p>
+
+        <p>
+          If this method of passing down arguments is not clear enough, or if a component needs a large number of arguments in order to be initialized, the builder pattern can be used.
+        </p>
+  
+        <p>
+          Inside the function, at the top level, a <code>scroll_view</code> component is used to add support for user scrolling. The scroll view uses a <code>solid_color_block</code>
+          component and a <code>borders</code> component to paint the background. The list view component also defines its own <code>FlexboxItemsLayout</code>.
+          For this component, the <code>text_size</code> and <code>item_height</code> are hardcoded.
+        </p>
+
+        <p>
+          Finally, a <code>list_view_base</code> component is used to display the items. Instead of passing down the items directly in the function, a callback is used.
+          The list view base uses its own custom builder <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/listview/list_view_builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/listview/list_view_builder#L12"
+            data-goto="pub struct GuiListViewBuilder">GuiListViewBuilder</span> that only exposes a single public method: <code>list_view_item</code>.
+        </p>
+
+        <p>
+          Items are implemented as GUI components and are inserted into the GUI tree. This way the layout system and the inner input system (click, hover, etc) 
+          can be used on the items. All the parameters passed to the <code>list_view_base</code> component are copied into each added item. The list view component itself is 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components#L95"
+            data-goto="ListViewBase,">empty</span>.
+        </p>
+
+        <p>
+          When an item is clicked, the event specified in <code>on_list_view_item_clicked</code> is sent back to the GUI. The demo raises the <code>GuiEvent::AnimalSelected</code> event.
+          However this event does not tell which item was just clicked. That is why, when a a list item is clicked, its ID (in this case the index in the original array)  will be written
+          into the selected state value. <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/state/running.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/blob/master/articles/retained_gui/client_src/src/state/running.rs#L81"
+            data-goto="gui.get_state(gui_state.selected_item)">gui.get_state(gui_state.selected_item)</span> is used to query that value.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="renderfeed" class="article-h"><a href="#renderfeed">Render feedback</a></h2>
+      </div>
+
+      <div>
+        <p>
+          Some actions on GUI components depend on their rendering output. Take the text input component for example:
+          in order to move the caret at the right position when a user clicks on it, the component needs to know the coordinates
+          of the top-right corner of the text label. However, because the layout and the component data are decoupled, the final
+          position of the text will only be known at the end of the render phase. 
+        </p>
+
+        <p>
+          In order to work around this problem, the <code>generate_sprites</code> step can write some data into the component. In the
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs#246"
+            data-goto="text.render_feedback.text_bounds = text_aabb">generate_sprites</span> function of the text input, the rendering code writes
+          the text AABB into <code>text.render_feedback</code>. When the text input receives a mouse event, this render feedback data is used to move the caret 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/text_input.rs#99"
+            data-goto="let mut local_position = mouse_position">to the correct position</span>.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="afterrender" class="article-h"><a href="#renderfeed">After render hooks</a></h2>
+      </div>
+
+      <div>
+        <p>
+          In the worst case scenario, some component will be rendered differently depending on the state of other components. In this situation,
+          render feedback won't cut it. This is where after render hooks comes into play. For example, the scroll bar component needs to know
+          the total height of the parent <code>GuiComponentScrollView</code> and the total size of the <code>GuiComponentScrollView</code> children.
+        </p>
+
+        <p>
+          When generating the sprites for the vertical scroll bar component, its total height and position can be queried from its GuiComponentView.
+          The problem is, the size of the scroll handle depends on the inner content size of the parent scroll view.
+          To reduce complexity at sprite generation time, a component can only read its own data, which means render feedback alone is not enough.
+        </p>
+
+        <p>
+          To get the info, the scroll_view component creates a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/scrollview.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/components/scrollview.rs#297"
+            data-goto="self.inner.after_render.push">AfterRenderHook::UpdateScrollView</span> at build time.
+          At sprite generation, the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/after_render_hooks.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/after_render_hooks.rs#30"
+            data-goto="pub(super) fn after_render">after_render_hooks::after_render</span> function will iterate over each registered callback and
+            run the custom logic. If any of them return <code>true</code> that means the UI needs to be re-rendered next frame.
+        </p>
+
+        <p>
+          In the case of a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/after_render_hooks.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/after_render_hooks.rs#49"
+            data-goto="fn update_scroll_view">scroll_view component</span>, the function will fetch the children size (aka <code>view.items_size</code>) from its computed view.
+          If the size matches the cached value in the callback, the hook returns <code>false</code>. If not, it calls the <code>after_render</code> functions on both
+          the scrollview and the scrollbar and returns <code>true</code>. With this, the next <code>generate_sprites</code> call will have the correct values.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="animations" class="article-h"><a href="#animations">Animations</a></h2>
+      </div>
+      
+      <div>
+        <p>
+          Game UIs often incorporate animated elements. It would be possible to build animations on top of the dynamic state system, however managing
+          animations from outside the GUI system is far from optimal. The animation system implemented in this project is inspired by CSS animations,
+          where each animation consists of keyframes that interpolate predefined values. Only basic translations are implemented in this demo.
+        </p>
+
+        <p>
+          The animations base is defined in the <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs#59"
+            data-goto="pub struct GuiAnimation">GuiAnimation</span> struct. Any animation information that is independent of GUI components and
+          the animation runtime should be stored there.
+        </p>
+
+        <p>
+          <code>GuiAnimation</code> are defined by the user and then inserted into the GUI at build time. When a component with an associated
+          animation is inserted into the GUI, <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs#214"
+            data-goto="fn register_animation">register_animation</span> wraps the <code>GuiAnimation</code> 
+          into a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs#89"
+            data-goto="pub struct GuiAnimationPlayState">GuiAnimationPlayState</span>. This struct links the component to the animation and stores the current
+          runtime of the animation.
+        </p>
+
+        <p>
+          Animations use the after render hook system. Each animation inserts a <code>AfterRenderHook::UpdateAnimation</code> into the hooks array.
+          After generating sprites, UpdateAnimation logic interpolates the keyframes using the current animation runtime and then update the GUI component data.
+          Because this process happens after sprite generation, the builder needs to <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/builder.rs#50"
+            data-goto="fn initialize_animations">initialize_animations</span> once at build time to make sure all animated components are correctly initialized.
+        </p>
+
+        <p>
+          Animation values are computed in <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs#104"
+            data-goto="fn interpolate_current_frame">interpolate_current_frame</span> and the <code>apply</code> function that follows stores the computed
+          values in the component.
+        </p>
+
+        <p>
+          Controlling animations is done using a <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/animations.rs#7"
+            data-goto="pub struct GuiAnimationControl">GuiAnimationControl</span> value, which is an opaque object that stores commands to execute.
+          The <code>GuiAnimationControl</code> is then stored in the GUI state, and <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs"
+            data-url2 = "https://github.com/gabdube/gabdube.github.io/refs/heads/master/articles/retained_gui/client_src/src/data/gui/state.rs#185"
+            data-goto="fn sync_animation">at state sync time</span>, the animation state is updated using the last values sent by the user.
+          Animations can also be registered internally by a GUI component; however this is not included in the demo.
+        </p>
+      </div>
+     
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="closing" class="article-h"><a href="#closing">Closing words</a></h2>
+      </div>
+
+      <div>
+        If you are building your own engine or pushing against the limits of existing GUI libraries, I hope this article provides useful ideas and a good 
+        framework to build upon. Sometimes, the simplest path forward is to build exactly what you need—and nothing more.
+      </div>
+    
+    </div>
+  </main>
+  <div id="demo" class="show-demo">
+    <div id="demoheader">
+      <div id="demoheaderShowDemo" class="demoheader-item active"><span>Demo</span></div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div id="codeview"></div>
+  </div>
+  <footer>
+    <p>Copyright &copy; 2025 Gabriel Dubé</p>
+  </footer>
+</body>
+</html>

@@ -6,3 +6,4 @@ Cargo.lock
 package-lock.json
 .DS_Store
 brainstorm.md
+build.bat

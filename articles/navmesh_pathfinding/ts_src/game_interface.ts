@@ -3,7 +3,7 @@ import { set_last_error } from "./error";
 import { EngineAssets } from "./assets";
 import { GameClient, GameClientInit } from "../build/navmesh_pathfinding_demo";
 
-const GAME_SRC_PATH = "/articles/navmesh_pathfinding/navmesh_pathfinding_demo.js";
+const GAME_SRC_PATH = "/articles/navmesh_pathfinding/release/navmesh_pathfinding_demo.js";
 
 export interface GameStartParams {
     max_texture_size: number,

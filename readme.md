@@ -6,14 +6,13 @@ https://gabdube.github.io/
 
 ## Useful commands
 
-Building the rust source of a demo
+Building a demo from source (replace "retained_gui" by the right folder)
 
 ```
-cd articles/minimal_retained_rust_gui/wasm_src
+cd articles/retained_gui/client_src 
 wasm-pack build --out-dir ../build --target web
-cp ../build/minimal_retained_rust_gui_demo.js ../
-cp ../build/minimal_retained_rust_gui_demo_bg.wasm ../
-
+cp ../build/retained_gui.js ../release/
+cp ../build/retained_gui_bg.wasm ../release/
 ```
 
 Compiling the typescript source of a demo
@@ -39,3 +38,6 @@ utility is still included for completeness sake.
 cargo run --release -p tools -- [command_name] *command_args*
 ```
 
+## License
+
+All code in this project use the MIT License unless specified otherwise.

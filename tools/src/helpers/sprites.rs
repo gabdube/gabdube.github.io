@@ -3,8 +3,13 @@ use crate::shared::{PngFile, SizeU32, RectU32, RectI32, rect_u32, rect_i32};
 pub const PIXEL_SIZE: usize = 4; // Size of rgba u8
 
 pub enum LoadSpriteParams {
+    /// Load the image and trim the whitespace
     Auto,
+    /// Load the image and but do NOT trim the whitespace
+    Copy,
+    /// Load a subsection of a larger image.Trim the whitespace
     Crop(RectU32),
+    /// Load a 2D animation, each frame having the size of `frame_size`
     Animation { frame_size: SizeU32 }
 }
 
@@ -63,6 +68,13 @@ impl SpriteData {
                 optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels, padding);
                 sprite.frame_size = sprite.size;
             },
+            LoadSpriteParams::Copy => {
+                let mut size = SizeU32 { width: png.info.width, height: png.info.height };
+                let src_rect = rect_i32(0, 0, png.info.width as i32, png.info.height as i32);
+                optimize_sprite_copy(png.info.line_size, &png.data, &src_rect, &mut size, &mut sprite.pixels, padding);
+                sprite.size = size;
+                sprite.frame_size = size;
+            }
             LoadSpriteParams::Crop(src_rect) => {
                 optimize_simple_sprite(png.info.line_size, &src_rect, &png.data, &mut sprite.size, &mut sprite.pixels, padding);
                 sprite.frame_size = sprite.size;
@@ -87,10 +99,11 @@ impl SpriteData {
         sprite
     }
 
+    #[allow(dead_code)]
     pub fn load_from_sprite_data(data: &Self, params: LoadSpriteParams, padding: u32) -> Self {
         let mut sprite = SpriteData::default();
         match params {
-            LoadSpriteParams::Auto => {
+            LoadSpriteParams::Auto | LoadSpriteParams::Copy => {
                 sprite.frame_size = data.frame_size;
                 sprite.size = data.size;
                 sprite.pixels = data.pixels.clone();

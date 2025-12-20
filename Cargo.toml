@@ -4,7 +4,7 @@ members = [
     "local-server",
     "tools",
     "articles/navmesh_pathfinding/wasm_src",
-    "articles/minimal_retained_rust_gui/wasm_src",
+    "articles/retained_gui/client_src",
 ]
 
 [profile.release]

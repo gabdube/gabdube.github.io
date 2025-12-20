@@ -1,7 +1,18 @@
 /*!
+Pack multiple images into one single atlas. The images are fed using a csv where each line must have the following format
+
+[name];[source_file_path];[outer_padding];[inner_padding];[image_type];[image_params...];
+
+* name: Name of the sprite in the final atlas
+* source_file_path: Path (relative to this working directory) to the image file to process
+* outer_padding: Padding to add in the final image. This padding will not be included in the final texture coordinates
+* inner_offset: Padding to add in the final image. This padding will BE included in the final texture coordinates
+* image_type: How to parse the image. One of ["auto", "copy", "crop", "animation"]
+* image_params: Extra argument depending of "image_type"
+
 Usage: cargo run --release -p tools -- pack-sprites --input-csv sprites.csv --output-image test.png --output-csv test.csv --max-width 512
 
-cargo run --release -p tools -- pack-sprites --input-csv "tools/unprocessed_assets/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 712
+cargo run --release -p tools -- pack-sprites --input-csv "tools/minimal_retained_rust_gui_atlas.csv" --output-image "articles/minimal_retained_rust_gui/assets/atlas.png" --output-csv "articles/minimal_retained_rust_gui/assets/atlas.csv" --max-width 1424
 */
 
 use std::collections::HashMap;
@@ -9,7 +20,6 @@ use crate::helpers::{PackSprite, LoadSpriteParams, SpriteData, SpritePackingHelp
 use crate::shared;
 
 const PIXEL_SIZE: usize = 4; // rbga u8
-const PACKING_PADDING: u32 = 3;  // Padding (in pixels) to add between each the border of the textures and between each sprites
 
 struct PackSpriteArgs {
     output_image_dst: String,
@@ -24,6 +34,7 @@ struct InputSprite {
     name: String,
     data: SpriteData,
     output_rect: shared::RectU32,
+    outer_padding: u32,
 }
 
 #[derive(Default)]
@@ -92,6 +103,10 @@ fn args() -> Option<PackSpriteArgs> {
 }
 
 fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
+    fn parse_u32(value: &str) -> u32 {
+        str::parse::<u32>(value).unwrap()
+    }
+    
     let mut image_cache: HashMap<String, shared::PngFile> = HashMap::new();
     let mut errors: Vec<String> = Vec::new();
     let mut line_number = 0;
@@ -104,7 +119,7 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
         ..Default::default()
     };
 
-    shared::split_csv::<7, _>(&args.input_csv, |args| {
+    shared::split_csv::<10, _>(&args.input_csv, |args| {
         if args.len() < 3 {
             errors.push(format!("{line_number}: Malformed arguments, sprite must have at least 3 parameters. Got {args:?}"));
             return;
@@ -113,20 +128,23 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
         let name = args[0].to_string();
         let path = args[1].to_string();
         let image = shared::load_cached(&mut image_cache, path);
+        let outer_padding = parse_u32(args[2]);
+        let inner_padding = parse_u32(args[3]);
 
-        let ty = match args[2] {
+        let ty = match args[4] {
             "auto" => LoadSpriteParams::Auto,
-            "crop" => match LoadSpriteParams::from_crop_args(&args[3..]) {
+            "copy" => LoadSpriteParams::Copy,
+            "crop" => match LoadSpriteParams::from_crop_args(&args[5..]) {
                 Some(value) => value,
                 None => {
-                    errors.push(format!("{line_number}: Failed to parse crop arguments. Expected [left, top, right, bottom], got {:?}", &args[3..]));
+                    errors.push(format!("{line_number}: Failed to parse crop arguments. Expected [left, top, right, bottom], got {:?}", &args[5..]));
                     return;
                 }
             },
-            "animation" => match LoadSpriteParams::from_animation_args(&args[3..]) {
+            "animation" => match LoadSpriteParams::from_animation_args(&args[5..]) {
                 Some(value) => value,
                 None => {
-                    errors.push(format!("{line_number}: Failed to parse crop arguments. Expected [frame_width, frame_height], got {:?}", &args[3..]));
+                    errors.push(format!("{line_number}: Failed to parse crop arguments. Expected [frame_width, frame_height], got {:?}", &args[5..]));
                     return;
                 }
             }
@@ -136,12 +154,13 @@ fn load_sprites(args: PackSpriteArgs) -> Option<PackSpriteState> {
             }
         };
 
-        let data = SpriteData::load_from_png(&image, ty, PACKING_PADDING);
+        let data = SpriteData::load_from_png(&image, ty, outer_padding + inner_padding);
 
         state.input_sprites.push(InputSprite { 
             name,
             data,
-            output_rect: shared::RectU32::default()
+            output_rect: shared::RectU32::default(),
+            outer_padding,
         });
 
         line_number += 1;
@@ -252,7 +271,11 @@ fn write_csv(state: &PackSpriteState) {
 
     for sprite in state.input_sprites.iter() {
         let sprite_count = sprite.data.sprite_count();
-        let [left, top, right, bottom] = sprite.output_rect.splat();
+        let [mut left, mut top, mut right, mut bottom] = sprite.output_rect.splat();
+        left += sprite.outer_padding;
+        top += sprite.outer_padding;
+        right -= sprite.outer_padding;
+        bottom -= sprite.outer_padding;
         csv_out.push_str(&format!("{};{};{};{};{};{};\n", &sprite.name, sprite_count, left, top, right, bottom));
     }
 

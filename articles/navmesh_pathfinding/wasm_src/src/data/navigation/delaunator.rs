@@ -36,21 +36,6 @@ THIS SOFTWARE.
 A very fast 2D [Delaunay Triangulation](https://en.wikipedia.org/wiki/Delaunay_triangulation) library for Rust.
 A port of [Delaunator](https://github.com/mapbox/delaunator).
 
-# Example
-
-```rust
-use delaunator::{Point, triangulate};
-
-let points = vec![
-    Point { x: 0., y: 0. },
-    Point { x: 1., y: 0. },
-    Point { x: 1., y: 1. },
-    Point { x: 0., y: 1. },
-];
-
-let result = triangulate(&points);
-println!("{:?}", result.triangles); // [0, 2, 1, 0, 3, 2]
-```
 */
 
 #![allow(clippy::many_single_char_names)]

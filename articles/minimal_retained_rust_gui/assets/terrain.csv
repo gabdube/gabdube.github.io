@@ -1,6 +1,0 @@
-GLOBALS;
-64;256;320;
-TILEMAPS;
-water;background;0;0;
-missing;background;64;0;
-grass;15pieces;0;64;
