@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slug text rendering</title>
+
+  <link rel="icon" type="image/svg+xml" href="/favico.svg" />
+  <link rel="stylesheet" href="/styles.css">
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/monokai-sublime.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" defer  ></script>
+
+  <script src="rust_slug_demo.js" defer></script>
+  <script src="/article_helpers.js" defer></script>
+</head>
+<body class="article" data-session-key="rust_slug_demo">
+  <header>
+    <h2>Slug text rendering with WebGPU and Rust</h2>
+    <div class="header-nav">
+      <div><a href="/index.html">Home</a></div>
+      <div><a id="toggleDemo">Toggle demo</a></div>
+      <div><a id="resetDemo">Reset Demo</a></div>
+    </div>
+  </header>
+  <main>
+    <div id="content">
+    </div>
+  </main>
+  <div id="demo" class="show-demo">
+    <div id="demoheader">
+      <div id="demoheaderShowDemo" class="demoheader-item active"><span>Demo</span></div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div id="codeview"></div>
+  </div>
+  <footer>
+    <p>Copyright &copy; 2025 Gabriel Dubé</p>
+  </footer>
+</body>
+</html>

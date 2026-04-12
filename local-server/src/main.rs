@@ -55,7 +55,7 @@ impl AssetsCollection {
 
 type SharedAssetsCollection = Arc<Mutex<AssetsCollection>>;
 
-const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "wasm", "glsl", "png", "csv", "ttf", "bin"];
+const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "wasm", "glsl", "png", "csv", "ttf", "bin", "txt", "wgsl"];
 
 fn load_text_file(files: &mut HashMap<String, FileType>, web_path: &str, local_path: &str) {
     match read_to_string(local_path) {
@@ -110,16 +110,20 @@ fn preload_files() -> SharedAssetsCollection {
     load_text_file(f, "/styles.css", "styles.css");
     load_text_file(f, "/favico.svg", "favico.svg");
     load_text_file(f, "/code.svg", "code.svg");
+    load_text_file(f, "/article_helpers.js", "article_helpers.js");
     load_bin_file(f, "/FiraCode-Regular.ttf", "FiraCode-Regular.ttf");
 
     preload_all_by_extensions(f, "html", true);
     preload_all_by_extensions(f, "js", true);
     preload_all_by_extensions(f, "glsl", true);
     preload_all_by_extensions(f, "csv", true);
+    preload_all_by_extensions(f, "txt", true);
+    preload_all_by_extensions(f, "wgsl", true);
     preload_all_by_extensions(f, "wasm", false);
     preload_all_by_extensions(f, "png", false);
     preload_all_by_extensions(f, "bin", false);
-
+    preload_all_by_extensions(f, "ttf", false);
+  
     preload_all_capsules(f);
 
     Arc::new(Mutex::new(collection))
@@ -283,11 +287,13 @@ fn response_from_url(url: &str, data: FileType) -> Response {
     let path_extension = ::std::path::Path::new(url).extension().and_then(|ext| ext.to_str() ).unwrap_or("");
     match path_extension {
         "" | "html" => Response::html(data.text()),
+        "txt"       => Response::text(data.text()),
         "svg"       => Response::svg(data.text()),
         "css"       => Response::from_data("text/css; charset=utf-8", data.bin()),
         "js"        => Response::from_data("text/javascript; charset=utf-8", data.bin()),
         "wasm"      => Response::from_data("application/wasm", data.bin()),
         "png"       => Response::from_data("image/png", data.bin()),
+        "wgsl"      => Response::from_data("text/wgsl; charset=utf-8", data.bin()),
         _           => Response::from_data("application/octet-stream", data.bin())
     }
 }
