@@ -13,6 +13,33 @@
 
   <script src="rust_slug_demo.js" defer></script>
   <script src="/article_helpers.js" defer></script>
+  <script>
+    function formatDemoStats() {
+      if (!window.demo) return;
+
+      const stats = window.demo.stats;
+
+      const lines = [];
+      lines.push(`Vertex buffer total size: ${stats.vertex_buffer_total_size.toLocaleString()} bytes`);
+      lines.push(`Vertices size: ${stats.vertices_size.toLocaleString()} bytes`);
+      lines.push(`Indices size: ${stats.indices_size.toLocaleString()} bytes`);
+
+      for (let i = 0; i < stats.fonts_size.length; i++) {
+        const font = stats.fonts_size[i];
+        lines.push(`Font ${i} - Total: ${font.total_size.toLocaleString()} bytes | Glyphs: ${font.glyphs.toLocaleString()} | Curves: ${font.curves.toLocaleString()} | Curve Indices: ${font.curve_indices.toLocaleString()}`);
+      }
+
+      lines.push(`Last text processing time: ${stats.last_text_processing_time.toFixed(2)} ms`);
+
+      const paragraph = document.createElement('p');
+      paragraph.textContent = lines.join("\n");
+
+      const stats_output = document.getElementById('stats');
+      stats_output.innerHTML = "";
+      stats_output.append(paragraph);
+      stats_output.style.display = "inherit";
+    }
+  </script>
 </head>
 <body class="article" data-session-key="rust_slug_demo">
   <header>
@@ -25,6 +52,421 @@
   </header>
   <main>
     <div id="content">
+      <div>
+        <p>
+          Font rendering on the GPU is a challenging problem that balances quality, performance, and memory efficiency. The <a href="https://terathon.com/blog/decade-slug.html">Slug Algorithm</a>
+          offers an optimal solution that maximizes quality and requires very little memory. While the GPU compute cost is higher than other algorithms, it is still going to be a fraction
+          of a fraction of the total rendering budget of any serious program, unless you want to use a really wacky font like I dunno
+          <a href="https://fonts.google.com/specimen/Eater?categoryFilters=Feeling:%2FExpressive%2FExcited&preview.script=Latn">this thing</a>, but let's not break the magic just yet.
+        </p>
+
+        <p>
+          The goal is to show you how to implement the Slug algorithm in your projects.
+          <a href="https://github.com/EricLengyel/Slug" target="_blank">The reference implementation</a> is an HLSL shader and handles all the GPU-side rendering, but it does not explain how to preprocess your font data.
+          This article walks through the pipeline needed to prepare fonts for the Slug algorithm, with an interactive demo that shows the algorithm in action.
+        </p>
+
+        <p>
+          The source code of this demo is available at <a href="https://github.com/gabdube/rust-slug-wgpu" target="_blank">https://github.com/gabdube/rust-slug-wgpu</a>.
+          This is a demo. The code is not production ready.
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/lib.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/lib.rs#L75"
+            data-goto="pub struct RustSlugDemo ">Code links</span> are included in the article to jump to the referenced source.
+        </p>
+  
+        <p>
+          This article assumes the reader is familiar with GPU rendering and font basics.
+        </p>
+
+        <h3>Demo Controls</h3>
+        <p>
+          The interactive demo below allows you to explore the Slug algorithm in action. Here are the available controls:
+        </p>
+        <ul>
+          <li><strong>Mouse drag</strong> - Pan the view horizontally and vertically</li>
+          <li><strong>Mouse wheel</strong> - Zoom in and out</li>
+          <li><strong>Drag and drop .ttf/.otf files</strong> - Load new fonts into the demo</li>
+          <li><strong>Drag and drop .txt files</strong> - Update the displayed text content</li>
+          <li><strong>Left/Right arrow keys</strong> - Cycle through loaded fonts</li>
+          <li><strong>Mouse interaction</strong> - Pauses the automatic text scrolling animation</li>
+        </ul>
+
+        <h3>Table of Contents</h3>
+        <ul style="gap: 20px;">
+          <li><a href="#numbers">Numbers</a></li>
+          <li><a href="#start">What the Shader Actually Needs</a></li>
+          <li><a href="#datastructure">Data structures</a></li>
+          <li><a href="#fontloading">Loading the font face</a></li>
+          <li><a href="#textlayout">Text layout</a></li>
+          <li><a href="#extracting">Extracting Glyph Outlines</a></li>
+          <li><a href="#banding">Spatial indexing</a></li>
+          <li><a href="#gpustorage">Sending data to the GPU</a></li>
+          <li><a href="#gpuread">Reading data from the GPU</a></li>
+          <li><a href="#closing">Closing words</a></li>
+        </ul>
+
+        <h3>Acknowledgements</h3>
+        <p>
+          Thanks to Eric Lengyel for creating the Slug algorithm and releasing it into the public domain.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="numbers" class="article-h"><a href="#numbers">Numbers</a></h2>
+      </div>
+
+      <div>
+        <p>
+          This demo processes the whole bee movie script. Around 49000 characters. On my CPU, an AMD Ryzen 9 9900X, the generation takes 9.5ms cold (starting from an empty font atlas).
+          Using "OpenSans", the resulting font buffer is a nice 69 KB and the text buffer weighs 6.5 MB. The local processing times are displayed in the console, but for convenience 
+          <a href="#" onclick="formatDemoStats()">click here</a> to show your stats.
+        </p>
+        <div id="stats" style="white-space: pre-wrap; margin-top: 10px; margin-bottom: 10px; padding: 0px 10px; display: none;" class="well"></div>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="overview" class="article-h"><a href="#overview">Overview</a></h2>
+
+        <p>
+          The Slug algorithm renders text directly from curve data on the GPU - no rasterized textures, no atlas packing, no blurriness at scale.
+          But the GPU can't read a TTF file. Everything has to be preprocessed into a GPU-friendly data layout.
+        </p>
+
+        <p>
+          Preprocessing is done on the CPU side. The logic is done in 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs"
+            data-goto="">slug.rs</span>. The main 
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/lib.rs"
+              data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/lib.rs#L267"
+              data-goto="pub struct RustSlugDemo ">lib.rs</span>
+          is plumbing to bridge to javascript.
+        </p>
+
+        <p>
+          The shader is a WGSL port of the original shader. Both the vertex and fragment shader are combined into 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/build/slug.wgsl"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/build/slug.wgsl"
+            data-goto="">slug.wgsl</span>. Note that it does not include the "dynamic dilation" feature from the implementation shader.
+        </p>
+
+        <p>
+          The only "interesting" part in <code>demo.ts</code> is how to
+          <span class="code-link"
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug-demo/demo.ts"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug-demo/demo.ts#L162"
+            data-goto="case MessageType.UpdateFontAtlas:">send the font data to the GPU</span> and because the font data is in linear memory, this is a simple <code>writeBuffer</code> call.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="start" class="article-h"><a href="#start">What the Shader Actually Needs</a></h2>
+
+        <p>
+          The fragment shader receives a pixel and has to answer: "is this pixel inside a glyph outline?" To do that efficiently it needs:
+
+          <ul>
+            <li>The glyph's outline expressed as <strong>quadratic Bézier curves</strong></li>
+            <li>A <strong>spatial index</strong> so it doesn't test every curve - only the ones near the pixel. Slug uses bands.</li>
+            <li><strong>Bounding box</strong> in font-space (EM units) to map a screen-space pixel into font-space.</li>
+          </ul>
+          
+          Everything else: the font file format, shaping, hinting exists only to produce these three things.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="datastructure" class="article-h"><a href="#datastructure">Data structures</a></h2>
+
+        <p>
+          The reference implementation uses textures to share the font data with the shader, this version uses storage buffers. The main benefit is that the structures on the GPU side will match
+          the ones on the CPU side. Also, with the font data in linear memory, uploading to a storage buffer is a simple memcpy. Note that there might be a small runtime cost from the extra data indirection.
+        </p>
+
+        <p>
+          Here's the three core types before diving into how they're built:
+        </p>
+        <ul>
+          <li>
+            <strong><code>QuadCurve</code></strong> - 
+            <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+              data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L13-L17"
+              data-goto="pub struct QuadCurve ">slug.rs:13-17</span>: 
+            three control points (p0, p1, p2) in font units. All outlines reduce to this.
+          </li>
+          <li>
+            <strong><code>SlugGlyph</code></strong> -
+             <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+              data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L192-L199"
+              data-goto="struct SlugGlyph ">slug.rs:192-199</span>: 
+            per-glyph metadata uploaded to the GPU. Contains:
+            <ul>
+              <li><code>bbox: AABBi16</code> - bounding box in font units</li>
+              <li><code>curves: QuadCurveRanges</code> - start/end index into the global curves array</li>
+              <li><code>horizontal_bands</code> and <code>vertical_bands</code> - 8 <code>PackedRange</code> each, one per band</li>
+            </ul>
+          </li>
+          <li>
+            <strong><code>PackedRange</code></strong> -
+             <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+              data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L81-L99"
+              data-goto="struct PackedRange ">slug.rs:81-99</span>
+            : a u32 packing a 24-bit offset and 8-bit count. The shader uses this to find which curve indices belong to a band without a separate length field.
+          </li>
+          <li>
+            <strong><code>SlugAtlas</code></strong> - 
+             <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+              data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L452-L469"
+              data-goto="struct SlugAtlas ">slug.rs:452-469</span>
+            : the in-memory font database. Three parallel arrays - <code>curves</code>, <code>glyphs_curves_indices</code>, <code>glyphs</code> hold the processed font data.
+            They map <span class="code-link" 
+             data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/build/slug.wgsl"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/build/slug.wgsl#L16"
+            data-goto="// The font curves">to the bindings</span> in the webgpu shader.
+          </li>
+        </ul>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="fontloading" class="article-h"><a href="#fontloading">Loading the font face</a></h2>
+
+        <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L474-L499"
+            data-goto="from_static_slice">Entry point: SlugAtlas::from_static_slice</span>
+        </p>
+
+        <p>
+          Loading a font face is done using external libraries. The program uses <a href="https://github.com/harfbuzz/rustybuzz"  target="_blank">rustybuzz</a>, a Rust port of harfbuzz to handle shaping. Internally, rustybuzz uses <a href="https://github.com/RazrFalcon/ttf-parser"  target="_blank">ttf-parser</a> to read the font source.
+          Compiling to WASM also requires pure Rust dependencies.
+        </p>
+
+        <p>
+          The demo
+          <span class="code-link" 
+              data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/lib.rs"
+              data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/lib.rs#L267"
+              data-goto="pub fn add_font">add_font</span> leaks the font source
+           so rustybuzz can hold a lifetime-free reference (safe here because fonts are loaded once and live for the app lifetime). 
+          A <code>ShapePlan</code> is precomputed for the language/script/direction combination, shaping is expensive and the plan captures the font's substitution rules so they aren't recomputed per string.
+        </p>
+
+        <p>
+          The method returns an empty <code>SlugAtlas</code>. Each font having its own instance. Note that when processing a large number of glyphs, setting a higher initial capacity
+          will help cut the memory reallocation (128 curves by default is VERY low). 
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="textlayout" class="article-h"><a href="#textlayout">Text layout</a></h2>
+
+        <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L568"
+            data-goto="pub fn build_slug_string">Entry point: SlugAtlas::build_slug_string</span>
+        </p>
+
+        <p>
+          The <code>build_slug_string</code> takes a rust <code>&str</code> as argument and turns it into a
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L135"
+            data-goto="pub struct SlugString">SlugString</span>, a container that stores the information required to turn the string into a 2D mesh: the glyph positions in screen-space, the glyph positions in font-space,
+          and the glyph index. Shaping is handled by <code>rustybuzz::shape_with_plan</code>, it returns a list of <code>glyph_id, glyph_position</code> that is used to know which glyph 
+          to process and how to position the text in 2D space.
+        </p>
+        <p>
+          Slug glyphs are generated on the fly by <code>self.glyph_data(glyph_id)</code>, if the glyph ID is not already in <code>processed_glyph_map</code>.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="extracting" class="article-h"><a href="#extracting">Extracting Glyph Outlines</a></h2>
+         <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L440"
+            data-goto="fn build_glyph(">Entry point: SlugAtlasBuilder::build_glyph</span><br>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L305"
+            data-goto="fn build_glyph_curves">Entry point: SlugAtlasBuilder::build_glyph_curves</span>
+        </p>
+
+        <p>
+          <code>build_glyph_curves</code> extracts the glyph outline using ttf-parser <code>outline_glyph</code>. 
+           <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L202"
+            data-goto="struct SlugCurveExtractor">SlugCurveExtractor</span> implements the functions to parse each type of segment.
+          
+          Slug only works on quadratic curves, so straight segments (<code>line_to</code>) are turned using
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L20"
+            data-goto="fn line_to_quadratic">line_to_quadratic</span>
+          and cubic Bézier lines (<code>curve_to</code>) are turned into two quadratic lines using <a href="https://en.wikipedia.org/wiki/De_Casteljau%27s_algorithm" target="_blank">De Casteljau subdivision</a>.
+        </p>
+
+        <p>Extracted curves are stored directly in the atlas, so no memory is allocated unless the capacity of <code>curves</code> is reached.</p>
+
+        <div class="image-holder">
+          <img src="assets/glyph_outline.gif" loading="lazy">
+        </div>
+
+        <p>
+          Perfectly linear segments will cause issues in the shader, so <code>line_to_quadratic</code> moves the control point by an imperceptible amount (LINE_EPSILON).
+        </p>
+
+        <p>
+          <code>outline_glyph</code> also returns the bounding box of the glyph in EM. 
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="banding" class="article-h"><a href="#banding">Spatial indexing</a></h2>
+
+        <p>
+          <span class="code-link"
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L323"
+            data-goto="fn build_glyph_bands(">Entry point: SlugAtlasBuilder::build_glyph_bands</span>
+        </p>
+
+        <p>
+          Without some kind of spatial indexing, the shader would have to evaluate every curve in a glyph for each pixel. Slug partitions the curves of a glyph in a list of vertical and horizontal bands.
+          The demo hardcodes the number of bands to 8, a sane default for simple fonts (OpenSans stores between 2 and 4 curves per band).
+        </p>
+
+        <div class="image-holder">
+          <img src="assets/banding.png" loading="lazy">
+        </div>
+
+        <p>
+          <code>build_glyph_bands</code> tries to not allocate memory. This means the code has to loop twice over the curves, once to count the amount per band, and a second
+          time to store the indices.
+        </p>
+
+        <p>
+          Lastly, the curves are sorted in descending order. By their maximum x component for the horizontal band and their maximum y component for the vertical one.
+        </p>
+      </div>
+  
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="gpustorage" class="article-h"><a href="#gpustorage">Sending data to the GPU</a></h2>
+
+        <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L503"
+            data-goto="pub fn pack_into">Entry point: SlugAtlas::pack_into</span><br>
+        </p>
+      
+        <p>
+          <code>pack_into</code> serializes the three arrays into a single contiguous byte buffer with alignment padding between sections. 
+          The function returns a 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug/src/slug.rs"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug/src/slug.rs#L115"
+            data-goto="pub struct SlugAtlasPackInfo ">SlugAtlasPackInfo</span> that holds the offset of the data in the final buffer.
+        </p>
+
+        <p>
+          Storage buffers have a minimum alignment that should normally be reported by <code>minStorageBufferOffsetAlignment</code>. 
+          The demo hard-codes it to 256 (the WebGPU safe default) because Firefox reports 32 but then crashes at runtime telling it needs to be aligned to 256 bytes.
+          (The real minimum alignment of my GPU is 4 bytes according to Vulkan).
+        </p>
+
+        <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/rust-slug-demo/demo.ts"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/rust-slug-demo/demo.ts#L162"
+            data-goto="case MessageType.UpdateFontAtlas:">On the typescript side</span>
+          , the application allocates one storage buffer for each font. One <code>device.queue.writeBuffer</code> copies all the glyphs data.
+          Then a new bind group is created with the offsets of <code>SlugAtlasPackInfo</code>.
+        </p>
+
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="gpuread" class="article-h"><a href="#gpuread">Reading data from the GPU</a></h2>
+
+        <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/build/slug.wgsl"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/build/slug.wgsl#L43"
+            data-goto="fn vertex_main(">Entry point: vertex_main</span>
+        </p>
+
+        <p>
+          The vertex holds the font-space coordinates and the glyph ID. They fit into a single <code>vec2&lt;u32&gt;</code>.
+          <code>extractBits</code> must be used to preserve the sign when unpacking the font-space coordinates.
+        </p>
+
+        <p>
+          Now in the fragment shader, the 
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/build/slug.wgsl"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/build/slug.wgsl#L137"
+            data-goto="fn fetchCurveIndicesRange">fetchCurveIndicesRange</span> function extracts the curves range for the current glyph using the interpolated font-space coordinate.
+          This is a bit more compute intensive than the reference implementation, but it results in a much "lighter" pixel format (24 bytes vs 48 bytes, excluding the color and jac components).
+          A small improvement could be to precompute the <code>band_count / size</code> and store the value in the glyph data.
+        </p>
+
+        <p>
+          <span class="code-link" 
+            data-url="https://raw.githubusercontent.com/gabdube/rust-slug-wgpu/refs/heads/master/build/slug.wgsl"
+            data-url2 = "https://github.com/gabdube/rust-slug-wgpu/blob/master/build/slug.wgsl#L168"
+            data-goto="fn SlugRender">SlugRender</span> then takes the curve indices range and processes the curves. How the algorithm works is out of the scope of this article,
+          but you can find the original paper from the author website: <a href="https://sluglibrary.com/">https://sluglibrary.com/</a>.
+        </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="closing" class="article-h"><a href="#closing">Closing words</a></h2>
+
+        <div>
+          The Slug algorithm is an all-around upgrade compared to other font rendering techniques.
+          I look forward to updating my projects and not having to manage font texture atlases.
+        </div>
+      </div>
+
+      <div style="height: 50px"></div>
+
     </div>
   </main>
   <div id="demo" class="show-demo">

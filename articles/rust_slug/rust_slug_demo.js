@@ -448,7 +448,7 @@ function initUserControls(demo) {
         }
     });
     document.addEventListener("mouseup", (e) => {
-        isPressed = !(e.button == 0);
+        isPressed = false;
     });
     demo.canvas.addEventListener("wheel", (e) => {
         e.preventDefault();

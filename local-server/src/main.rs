@@ -55,7 +55,7 @@ impl AssetsCollection {
 
 type SharedAssetsCollection = Arc<Mutex<AssetsCollection>>;
 
-const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "wasm", "glsl", "png", "csv", "ttf", "bin", "txt", "wgsl"];
+const ASSETS_EXTENSIONS_TO_RELOAD: &[&str] = &["", "html", "js", "css", "svg", "wasm", "glsl", "png", "gif", "csv", "ttf", "bin", "txt", "wgsl"];
 
 fn load_text_file(files: &mut HashMap<String, FileType>, web_path: &str, local_path: &str) {
     match read_to_string(local_path) {
@@ -123,6 +123,7 @@ fn preload_files() -> SharedAssetsCollection {
     preload_all_by_extensions(f, "png", false);
     preload_all_by_extensions(f, "bin", false);
     preload_all_by_extensions(f, "ttf", false);
+    preload_all_by_extensions(f, "gif", false);
   
     preload_all_capsules(f);
 
@@ -163,6 +164,7 @@ fn watch_files(assets: &SharedAssetsCollection) {
         let articles_path = Path::new("./articles/").canonicalize().unwrap();
         let index_path = Path::new("./index.html").canonicalize().unwrap();
         let styles_path = Path::new("./styles.css").canonicalize().unwrap();
+        let helpers_path = Path::new("./article_helpers.js").canonicalize().unwrap();
 
         let web_path_str = Path::new(".")
             .canonicalize().unwrap()
@@ -173,6 +175,7 @@ fn watch_files(assets: &SharedAssetsCollection) {
         watcher.watch(&articles_path, RecursiveMode::Recursive).unwrap();
         watcher.watch(&index_path, RecursiveMode::NonRecursive).unwrap();
         watcher.watch(&styles_path, RecursiveMode::NonRecursive).unwrap();
+        watcher.watch(&helpers_path, RecursiveMode::NonRecursive).unwrap();
 
         let mut accumulate: HashSet<(String, String)> = HashSet::default();
 

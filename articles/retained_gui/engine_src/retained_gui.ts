@@ -1,5 +1,4 @@
 import { EngineAssets } from "./assets";
-import { init_codeview } from "./codeview";
 import { set_last_error } from "./error";
 import { GameInterface, GameInterfaceStartupParams } from "./game_interface";
 import { file_extension } from "./helpers";
@@ -368,61 +367,7 @@ function run(engine: Engine) {
 //
 
 let engine: Engine|null = null
-let toggle_demo_state = sessionStorage.getItem("retained_gui_toggle_demo_state") || "both";
 let waiting_for_visible_demo = false;
-const min_width_for_both = 600;
-
-function updateBodyClasses() {
-    const classes = document.body.classList;
-    classes.remove("focus-article");
-    classes.remove("focus-demo");
-    if (toggle_demo_state === "article") {
-        classes.add("focus-article");
-    } else if (toggle_demo_state === "demo") {
-        classes.add("focus-demo");
-    }
-
-    sessionStorage.setItem('retained_gui_toggle_demo_state', toggle_demo_state);
-}
-
-async function toggleDemo() {
-    if (toggle_demo_state === "both") {
-        toggle_demo_state = "article";
-    } else if (toggle_demo_state === "article") {
-        toggle_demo_state = "demo";
-    } else if (toggle_demo_state === "demo") {
-        if (document.body.offsetWidth < min_width_for_both) {
-            toggle_demo_state = "article";
-        } else {
-            toggle_demo_state = "both";
-        }
-    }
-
-    updateBodyClasses();
-
-    await init_app();
-}
-
-function init_demo_toggle_handlers() {
-    const body = document.body;
-    if (body.offsetWidth < min_width_for_both) {
-        toggle_demo_state = "article";
-    }
-
-    document.getElementById("toggleDemo")?.addEventListener("click", () => {
-        toggleDemo();
-    });
-
-    window.addEventListener("resize", () => {
-        if (body.offsetWidth < min_width_for_both && toggle_demo_state === "both") {
-            toggle_demo_state = "article";
-            updateBodyClasses();
-
-        }
-    });
-
-    updateBodyClasses();
-}
 
 async function init_app() {
     if (engine) {
@@ -442,6 +387,8 @@ async function init_app() {
         return;
     }
 
+    (window as any).demo = engine;
+
     boundedRun = run.bind(null, engine);
     boundedRun();
 
@@ -451,6 +398,4 @@ async function init_app() {
     }
 }
 
-init_demo_toggle_handlers();
-init_codeview();
 init_app();
