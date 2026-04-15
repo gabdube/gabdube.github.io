@@ -103,6 +103,7 @@
           <li><a href="#banding">Spatial indexing</a></li>
           <li><a href="#gpustorage">Sending data to the GPU</a></li>
           <li><a href="#gpuread">Reading data from the GPU</a></li>
+          <li><a href="#dataflow">The Full Data Flow</a></li>
           <li><a href="#closing">Closing words</a></li>
         </ul>
 
@@ -452,6 +453,30 @@
             data-goto="fn SlugRender">SlugRender</span> then takes the curve indices range and processes the curves. How the algorithm works is out of the scope of this article,
           but you can find the original paper from the author website: <a href="https://sluglibrary.com/">https://sluglibrary.com/</a>.
         </p>
+      </div>
+
+      <hr class="article-separator">
+
+      <div>
+        <h2 id="dataflow" class="article-h">The Full Data Flow</h2>
+
+        <p>Once put together, it requires very little amount of code to get the algorithm running:</p>
+      
+        <ul>
+          <li>Open a font face</li>
+          <li>Use a shaping algorithm on your strings</li>
+          <li>
+            For each glyph:
+            <ul>
+              <li>Extract the outline</li>
+              <li>Compute the curves offsets for the banding</li>
+            </ul>
+          </li>
+          <li>Pack the preprocessed font data into a storage buffer and the text mesh into a vertex buffer</li>
+          <li>Send the buffers to the GPU</li>
+          <li>Extract the curves from your data and run the algorithm</li>
+        </ul>
+      
       </div>
 
       <hr class="article-separator">
